@@ -1,25 +1,21 @@
 package taskhandler
 
 import (
-	"encoding/json"
-	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
+
+	"github.com/mKaloer/tfservingcache/pkg/tfservingproxy"
+	log "github.com/sirupsen/logrus"
 )
 
 type TaskHandler struct {
-	Cluster *ClusterIpList
-	Proxy   *httputil.ReverseProxy
+	Cluster   *ClusterIpList
+	RestProxy *tfservingproxy.RestProxy
 }
 
-type Query struct {
-	Key string
-}
-
-func (handler *TaskHandler) Serve() func(http.ResponseWriter, *http.Request) {
-	return handler.Proxy.ServeHTTP
+func (handler *TaskHandler) ServeRest() func(http.ResponseWriter, *http.Request) {
+	return handler.RestProxy.Serve()
 }
 
 func New() *TaskHandler {
@@ -27,14 +23,9 @@ func New() *TaskHandler {
 		Cluster: NewCluster(),
 	}
 
-	director := func(req *http.Request) {
-		// Parse body
-		var q Query
-		err := json.NewDecoder(req.Body).Decode(&q)
-		if err != nil {
-			return
-		}
-		nodes, err := h.Cluster.FindNodeForKey(q.Key)
+	director := func(req *http.Request, modelName string, version string) {
+		var modelKey = modelName + "##" + version
+		nodes, err := h.Cluster.FindNodeForKey(modelKey)
 		if err != nil {
 			return
 		}
@@ -47,13 +38,12 @@ func New() *TaskHandler {
 		selectedUrl.Path = req.URL.Path
 		log.Infof("Forwarding to %s", selectedUrl.String())
 		req.URL = selectedUrl
-
 		if _, ok := req.Header["User-Agent"]; !ok {
 			// explicitly disable User-Agent so it's not set to default value
 			req.Header.Set("User-Agent", "")
 		}
 	}
-	h.Proxy = &httputil.ReverseProxy{Director: director}
+	h.RestProxy = tfservingproxy.NewRestProxy(director)
 
 	return h
 }

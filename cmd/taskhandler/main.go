@@ -24,6 +24,6 @@ func main() {
 		for _, n := range nodes2 {
 			println(n)
 		}*/
-	http.HandleFunc("/hello", h.Serve())
+	http.HandleFunc("/v1/models/", h.ServeRest())
 	http.ListenAndServe(":8090", nil)
 }
