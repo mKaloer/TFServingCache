@@ -63,7 +63,7 @@ func (cache *LRUCache) EnsureFreeBytes(bytes uint32) {
 	for cache.lruList.Len() > 0 && cache.Capacity-cache.currentSize < bytes {
 		lruModelElement := cache.lruList.Back()
 		lruModel := lruModelElement.Value.(Model)
-		log.Infof("Removing model: %s", lruModel.path)
+		log.Infof("Removing model: %s:%s (%s)", lruModel.identifier.ModelName, lruModel.identifier.Version, lruModel.path)
 		if fileExists(lruModel.path) {
 			// Delete file
 			err := os.Remove(lruModel.path)
@@ -73,12 +73,12 @@ func (cache *LRUCache) EnsureFreeBytes(bytes uint32) {
 		}
 		cache.currentSize -= lruModel.sizeOnDisk
 		cache.lruList.Remove(lruModelElement)
+		delete(cache.modelMap, lruModel.identifier)
 	}
 	if cache.lruList.Len() > 0 && cache.Capacity-cache.currentSize < bytes {
 		log.Errorf("Cannot allocate requested number of bytes. Capacity: %d, request: %d", cache.Capacity, bytes)
 	}
 }
-
 
 func (cache *LRUCache) ListModels() []*Model {
 	res := []*Model{}
@@ -87,5 +87,5 @@ func (cache *LRUCache) ListModels() []*Model {
 		res = append(res, &model)
 	}
 	return res
-	
+
 }

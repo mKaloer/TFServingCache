@@ -46,12 +46,12 @@ func ReloadConfig(models []*Model) {
 
 	client := pb.NewModelServiceClient(conn)
 
-	log.Info("REQUESTING")
-
+	log.Debug("Updating TF config...")
 	resp, err := client.HandleReloadConfigRequest(context.Background(), request)
-	log.Info("BOO")
 	if err != nil {
 		log.Fatalln(err)
+	} else {
+		log.Debug("TF config updated successfully")
 	}
 
 	log.Println(resp)

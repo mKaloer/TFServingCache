@@ -12,7 +12,7 @@ type DiskModelProvider struct {
 }
 
 func (provider DiskModelProvider) FetchModel(modelName string, modelVersion string) Model {
-	log.Infof("WOOOO FETCHING STUFF")
+	log.Infof("Fetching model %s:%s", modelName, modelVersion)
 	return Model{
 		identifier: ModelIdentifier{ModelName: modelName, Version: modelVersion},
 		path:       "fooo/bar",
