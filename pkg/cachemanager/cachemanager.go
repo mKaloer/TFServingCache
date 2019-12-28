@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
 	"github.com/mKaloer/tfservingcache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
@@ -25,6 +26,7 @@ type CacheManager struct {
 	localRestUrl  url.URL
 	ModelProvider ModelProvider
 	LocalCache    ModelCache
+	rwMux         sync.RWMutex
 }
 
 func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request) {
@@ -32,20 +34,29 @@ func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request
 }
 
 func (cache *CacheManager) fetchModel(identifier ModelIdentifier) {
-	model, isPresent := cache.LocalCache.Get(identifier)
-	fileExists := isPresent && fileExists(model.path)
-	if !isPresent || !fileExists {
-		if !fileExists {
-			log.Warnf("Model in cache but not present on disk. Name: %s, Version: %s, path: %s",
-				identifier.ModelName, identifier.Version, model.path)
-		}
+	_, isPresent := cache.tryGetModelFromCache(identifier)
+	if !isPresent {
 		// Model does not exist - get size, then put in cache
+		cache.rwMux.Lock()
+		defer cache.rwMux.Unlock()
 		modelSize := cache.ModelProvider.ModelSize(identifier.ModelName, identifier.Version)
 		cache.LocalCache.EnsureFreeBytes(modelSize)
 		model := cache.ModelProvider.FetchModel(identifier.ModelName, identifier.Version)
 		cache.LocalCache.Put(identifier, model)
 		ReloadConfig(cache.LocalCache.ListModels())
 	}
+}
+
+func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Model, bool) {
+	cache.rwMux.RLock()
+	defer cache.rwMux.RUnlock()
+	model, isPresent := cache.LocalCache.Get(identifier)
+	fileExists := isPresent && fileExists(model.path)
+	if isPresent && !fileExists {
+		log.Warnf("Model in cache but not present on disk. Name: %s, Version: %s, path: %s",
+			identifier.ModelName, identifier.Version, model.path)
+	}
+	return model, fileExists
 }
 
 func New(localRestUrl string, modelProvider ModelProvider, modelCache ModelCache) *CacheManager {
