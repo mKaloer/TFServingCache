@@ -3,6 +3,8 @@ package cachemanager
 import (
 	"context"
 	log "github.com/sirupsen/logrus"
+	"path"
+	"strconv"
 	pb "tensorflow_serving/apis"
 	config "tensorflow_serving/config"
 	storage_path "tensorflow_serving/sources/storage_path"
@@ -10,29 +12,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-func ReloadConfig(models []*Model) {
+func ReloadConfig(models []*Model, tfServingServerModelDir string) {
+
+	configs := createModelConfig(models, tfServingServerModelDir)
 	request := &pb.ReloadConfigRequest{
 		Config: &config.ModelServerConfig{
 			Config: &config.ModelServerConfig_ModelConfigList{
 				ModelConfigList: &config.ModelConfigList{
-					Config: []*config.ModelConfig{
-						&config.ModelConfig{
-							Name:          "foo",
-							BasePath:      "/models/foo",
-							ModelPlatform: "tensorflow",
-							ModelVersionPolicy: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy{
-								PolicyChoice: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific_{
-									Specific: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{
-										Versions: []int64{123},
-									},
-								},
-							},
-						},
-						/*&config.ModelConfig{
-							Name:     "bar",
-							BasePath: "bar2",
-						},*/
-					},
+					Config: configs,
 				},
 			},
 		},
@@ -55,4 +42,41 @@ func ReloadConfig(models []*Model) {
 	}
 
 	log.Println(resp)
+}
+
+func createModelConfig(models []*Model, tfServingServerModelDir string) []*config.ModelConfig {
+	distinctModels := map[string]*storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{}
+	// Number of configs will be at most len(models) large (also the expected val)
+	var configs = make([]*config.ModelConfig, 0, len(models))
+	for _, model := range models {
+
+		modelVersion, err := strconv.ParseInt(model.Identifier.Version, 10, 64)
+		if err != nil {
+			log.WithError(err).Errorf("Error converting model version to int: %s:%s", model.Identifier.ModelName, model.Identifier.Version)
+			continue
+		}
+
+		// Check for existing model of same name
+		existingVersions, exists := distinctModels[model.Identifier.ModelName]
+		if exists {
+			existingVersions.Versions = append(existingVersions.Versions, modelVersion)
+		} else {
+			// Create new config
+			modelVersions := &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{
+				Versions: []int64{modelVersion},
+			}
+			distinctModels[model.Identifier.ModelName] = modelVersions
+			configs = append(configs, &config.ModelConfig{
+				Name:          model.Identifier.ModelName,
+				BasePath:      path.Join(tfServingServerModelDir, model.Identifier.ModelName),
+				ModelPlatform: "tensorflow",
+				ModelVersionPolicy: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy{
+					PolicyChoice: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific_{
+						Specific: modelVersions,
+					},
+				},
+			})
+		}
+	}
+	return configs
 }

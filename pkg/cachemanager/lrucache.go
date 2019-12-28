@@ -2,26 +2,32 @@ package cachemanager
 
 import (
 	"container/list"
-	log "github.com/sirupsen/logrus"
 	"os"
+	"path"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type ModelCache interface {
+	BaseDir() string
+	ModelPath(model Model) string
 	Put(item ModelIdentifier, model Model)
 	Get(item ModelIdentifier) (Model, bool)
 	ListModels() []*Model
-	EnsureFreeBytes(bytes uint32)
+	EnsureFreeBytes(bytes int64)
 }
 
 type LRUCache struct {
+	baseDir     string
 	lruList     *list.List
 	modelMap    map[ModelIdentifier]*list.Element
-	Capacity    uint32
-	currentSize uint32
+	Capacity    int64
+	currentSize int64
 }
 
-func NewLRUCache(capacityInBytes uint32) LRUCache {
+func NewLRUCache(dir string, capacityInBytes int64) LRUCache {
 	cache := LRUCache{
+		baseDir:     dir,
 		lruList:     list.New(),
 		modelMap:    map[ModelIdentifier]*list.Element{},
 		Capacity:    capacityInBytes,
@@ -49,31 +55,31 @@ func (cache *LRUCache) Put(item ModelIdentifier, model Model) {
 	existingElement, isContained := cache.modelMap[item]
 	if !isContained {
 		// Cleanup space
-		cache.EnsureFreeBytes(model.sizeOnDisk)
+		cache.EnsureFreeBytes(model.SizeOnDisk)
 		newElement := cache.lruList.PushFront(model)
 		cache.modelMap[item] = newElement
-		cache.currentSize += model.sizeOnDisk
+		cache.currentSize += model.SizeOnDisk
 	} else {
 		cache.lruList.MoveToFront(existingElement)
 	}
 }
 
 // Deletes LRU models until number of bytes are available
-func (cache *LRUCache) EnsureFreeBytes(bytes uint32) {
+func (cache *LRUCache) EnsureFreeBytes(bytes int64) {
 	for cache.lruList.Len() > 0 && cache.Capacity-cache.currentSize < bytes {
 		lruModelElement := cache.lruList.Back()
 		lruModel := lruModelElement.Value.(Model)
-		log.Infof("Removing model: %s:%s (%s)", lruModel.identifier.ModelName, lruModel.identifier.Version, lruModel.path)
-		if fileExists(lruModel.path) {
+		log.Infof("Removing model: %s:%s (%s)", lruModel.Identifier.ModelName, lruModel.Identifier.Version, lruModel.Path)
+		if fileOrDirExists(lruModel.Path) {
 			// Delete file
-			err := os.Remove(lruModel.path)
+			err := os.Remove(lruModel.Path)
 			if err != nil {
-				log.Fatalf("Could not delete file: %s - %s", lruModel.path, err)
+				log.Fatalf("Could not delete file: %s - %s", lruModel.Path, err)
 			}
 		}
-		cache.currentSize -= lruModel.sizeOnDisk
+		cache.currentSize -= lruModel.SizeOnDisk
 		cache.lruList.Remove(lruModelElement)
-		delete(cache.modelMap, lruModel.identifier)
+		delete(cache.modelMap, lruModel.Identifier)
 	}
 	if cache.lruList.Len() > 0 && cache.Capacity-cache.currentSize < bytes {
 		log.Errorf("Cannot allocate requested number of bytes. Capacity: %d, request: %d", cache.Capacity, bytes)
@@ -88,4 +94,12 @@ func (cache *LRUCache) ListModels() []*Model {
 	}
 	return res
 
+}
+
+func (cache *LRUCache) BaseDir() string {
+	return cache.baseDir
+}
+
+func (cache *LRUCache) ModelPath(model Model) string {
+	return path.Join(cache.baseDir, model.Path)
 }

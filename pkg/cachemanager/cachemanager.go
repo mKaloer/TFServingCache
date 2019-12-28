@@ -11,9 +11,9 @@ import (
 )
 
 type Model struct {
-	identifier ModelIdentifier
-	path       string
-	sizeOnDisk uint32
+	Identifier ModelIdentifier
+	Path       string
+	SizeOnDisk int64
 }
 
 type ModelIdentifier struct {
@@ -22,59 +22,77 @@ type ModelIdentifier struct {
 }
 
 type CacheManager struct {
-	RestProxy     *tfservingproxy.RestProxy
-	localRestUrl  url.URL
-	ModelProvider ModelProvider
-	LocalCache    ModelCache
-	rwMux         sync.RWMutex
+	RestProxy                    *tfservingproxy.RestProxy
+	localRestUrl                 url.URL
+	ModelProvider                ModelProvider
+	LocalCache                   ModelCache
+	TFServingServerModelBasePath string
+	rwMux                        sync.RWMutex
 }
 
 func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request) {
 	return handler.RestProxy.Serve()
 }
 
-func (cache *CacheManager) fetchModel(identifier ModelIdentifier) {
+func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 	_, isPresent := cache.tryGetModelFromCache(identifier)
 	if !isPresent {
 		// Model does not exist - get size, then put in cache
 		cache.rwMux.Lock()
 		defer cache.rwMux.Unlock()
-		modelSize := cache.ModelProvider.ModelSize(identifier.ModelName, identifier.Version)
+		modelSize, err := cache.ModelProvider.ModelSize(identifier.ModelName, identifier.Version)
+		if err != nil {
+			log.WithError(err).Error("Error while retrieving model size")
+			return err
+		}
 		cache.LocalCache.EnsureFreeBytes(modelSize)
-		model := cache.ModelProvider.FetchModel(identifier.ModelName, identifier.Version)
+		model, err := cache.ModelProvider.LoadModel(identifier.ModelName, identifier.Version, cache.LocalCache.BaseDir())
+		if err != nil {
+			log.WithError(err).Error("Error while retrieving model")
+			return err
+		}
 		cache.LocalCache.Put(identifier, model)
-		ReloadConfig(cache.LocalCache.ListModels())
+		ReloadConfig(cache.LocalCache.ListModels(), cache.TFServingServerModelBasePath)
 	}
+	return nil
 }
 
 func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Model, bool) {
 	cache.rwMux.RLock()
 	defer cache.rwMux.RUnlock()
 	model, isPresent := cache.LocalCache.Get(identifier)
-	fileExists := isPresent && fileExists(model.path)
+	hostModelPath := cache.LocalCache.ModelPath(model)
+	fileExists := isPresent && fileOrDirExists(hostModelPath)
 	if isPresent && !fileExists {
 		log.Warnf("Model in cache but not present on disk. Name: %s, Version: %s, path: %s",
-			identifier.ModelName, identifier.Version, model.path)
+			identifier.ModelName, identifier.Version, hostModelPath)
 	}
 	return model, fileExists
 }
 
-func New(localRestUrl string, modelProvider ModelProvider, modelCache ModelCache) *CacheManager {
+func New(localRestUrl string, modelProvider ModelProvider, modelCache ModelCache, tfServingServerBasePath string) *CacheManager {
 	restUrl, err := url.Parse(localRestUrl)
 	if err != nil {
 		return nil
 	}
+
 	h := &CacheManager{
-		localRestUrl:  *restUrl,
-		ModelProvider: modelProvider,
-		LocalCache:    modelCache,
+		localRestUrl:                 *restUrl,
+		ModelProvider:                modelProvider,
+		LocalCache:                   modelCache,
+		TFServingServerModelBasePath: tfServingServerBasePath,
 	}
 
 	director := func(req *http.Request, modelName string, version string) {
 		log.Infof("Fetching model...")
 		identifier := ModelIdentifier{ModelName: modelName,
 			Version: version}
-		h.fetchModel(identifier)
+		err := h.fetchModel(identifier)
+		if err != nil {
+			log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
+			req.Response.StatusCode = 500
+			return
+		}
 		localUrl := *restUrl
 		localUrl.Path = req.URL.Path
 		log.Infof("Forwarding to %s", localUrl.String())
@@ -89,10 +107,7 @@ func New(localRestUrl string, modelProvider ModelProvider, modelCache ModelCache
 	return h
 }
 
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
+func fileOrDirExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
 }

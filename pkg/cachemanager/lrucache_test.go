@@ -6,27 +6,27 @@ import (
 )
 
 func TestCacheAddGet(t *testing.T) {
-	cache := NewLRUCache(1024)
+	cache := NewLRUCache("./cache", 1024)
 	identifier := ModelIdentifier{ModelName: "foo", Version: "42"}
-	m := Model{identifier: identifier, path: "/some/path", sizeOnDisk: 10}
+	m := Model{Identifier: identifier, Path: "/some/path", SizeOnDisk: 10}
 	cache.Put(identifier, m)
 	m2, avail := cache.Get(identifier)
 	if !avail {
 		t.Errorf("Cache item not available")
 	}
-	if m2.path == "" {
+	if m2.Path == "" {
 		t.Errorf("Cached model path not set")
 	}
-	if m2.identifier.ModelName != identifier.ModelName || m2.identifier.Version != identifier.Version {
+	if m2.Identifier.ModelName != identifier.ModelName || m2.Identifier.Version != identifier.Version {
 		t.Errorf("Wrong model identifier")
 	}
-	if m2.sizeOnDisk != 10 {
+	if m2.SizeOnDisk != 10 {
 		t.Errorf("Wrong size on disk")
 	}
 }
 
 func TestCacheGetNotPresent(t *testing.T) {
-	cache := NewLRUCache(1024)
+	cache := NewLRUCache("./cache", 1024)
 	identifier := ModelIdentifier{ModelName: "foo", Version: "42"}
 	_, avail := cache.Get(identifier)
 	if avail {
@@ -35,11 +35,11 @@ func TestCacheGetNotPresent(t *testing.T) {
 }
 
 func TestCacheRemovesLRUSeqAccess(t *testing.T) {
-	cache := NewLRUCache(95)
+	cache := NewLRUCache("./cache", 95)
 	for i := 1; i <= 10; i++ {
 		version := strconv.Itoa(i)
 		identifier := ModelIdentifier{ModelName: "foo", Version: version}
-		m := Model{identifier: identifier, path: "/some/path", sizeOnDisk: 10}
+		m := Model{Identifier: identifier, Path: "/some/path", SizeOnDisk: 10}
 		cache.Put(identifier, m)
 	}
 
@@ -59,11 +59,11 @@ func TestCacheRemovesLRUSeqAccess(t *testing.T) {
 }
 
 func TestCacheRemovesLRUNonSeqAccess(t *testing.T) {
-	cache := NewLRUCache(100)
+	cache := NewLRUCache("./cache", 100)
 	for i := 1; i <= 10; i++ {
 		version := strconv.Itoa(i)
 		identifier := ModelIdentifier{ModelName: "foo", Version: version}
-		m := Model{identifier: identifier, path: "/some/path", sizeOnDisk: 10}
+		m := Model{Identifier: identifier, Path: "/some/path", SizeOnDisk: 10}
 		cache.Put(identifier, m)
 	}
 
@@ -72,7 +72,7 @@ func TestCacheRemovesLRUNonSeqAccess(t *testing.T) {
 	_, avail1 := cache.Get(lruIdentifier)
 
 	identifier := ModelIdentifier{ModelName: "foo", Version: "11"}
-	m := Model{identifier: identifier, path: "/some/path", sizeOnDisk: 10}
+	m := Model{Identifier: identifier, Path: "/some/path", SizeOnDisk: 10}
 	cache.Put(identifier, m)
 	_, avail1 = cache.Get(lruIdentifier)
 	_, avail2 := cache.Get(secondlruIdentifier)
@@ -85,17 +85,17 @@ func TestCacheRemovesLRUNonSeqAccess(t *testing.T) {
 }
 
 func TestCacheRemovesLRUVarSizes(t *testing.T) {
-	cache := NewLRUCache(100)
+	cache := NewLRUCache("./cache", 100)
 	for i := 4; i >= 1; i-- {
 		version := strconv.Itoa(i)
 		identifier := ModelIdentifier{ModelName: "foo", Version: version}
-		m := Model{identifier: identifier, path: "/some/path", sizeOnDisk: uint32(10 * i)}
+		m := Model{Identifier: identifier, Path: "/some/path", SizeOnDisk: int64(10 * i)}
 		cache.Put(identifier, m)
 	}
 
 	// adding 2 of size 20 should remove 1
 	identifier2 := ModelIdentifier{ModelName: "foo", Version: "5"}
-	m2 := Model{identifier: identifier2, path: "/some/path", sizeOnDisk: 20}
+	m2 := Model{Identifier: identifier2, Path: "/some/path", SizeOnDisk: 20}
 	cache.Put(identifier2, m2)
 
 	_, avail1 := cache.Get(ModelIdentifier{ModelName: "foo", Version: "4"})
@@ -110,7 +110,7 @@ func TestCacheRemovesLRUVarSizes(t *testing.T) {
 	}
 
 	identifier3 := ModelIdentifier{ModelName: "foo", Version: "6"}
-	m3 := Model{identifier: identifier2, path: "/some/path", sizeOnDisk: 20}
+	m3 := Model{Identifier: identifier2, Path: "/some/path", SizeOnDisk: 20}
 	cache.Put(identifier3, m3)
 
 	if len(cache.ListModels()) != 5 {
