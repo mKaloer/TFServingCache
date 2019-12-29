@@ -1,6 +1,6 @@
 package cachemanager
 
 type ModelProvider interface {
-	LoadModel(modelName string, modelVersion string, destinationDir string) (Model, error)
-	ModelSize(modelName string, modelVersion string) (int64, error)
+	LoadModel(modelName string, modelVersion int64, destinationDir string) (Model, error)
+	ModelSize(modelName string, modelVersion int64) (int64, error)
 }

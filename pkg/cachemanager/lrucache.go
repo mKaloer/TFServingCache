@@ -69,7 +69,7 @@ func (cache *LRUCache) EnsureFreeBytes(bytes int64) {
 	for cache.lruList.Len() > 0 && cache.Capacity-cache.currentSize < bytes {
 		lruModelElement := cache.lruList.Back()
 		lruModel := lruModelElement.Value.(Model)
-		log.Infof("Removing model: %s:%s (%s)", lruModel.Identifier.ModelName, lruModel.Identifier.Version, lruModel.Path)
+		log.Infof("Removing model: %s:%d (%s)", lruModel.Identifier.ModelName, lruModel.Identifier.Version, lruModel.Path)
 		if fileOrDirExists(lruModel.Path) {
 			// Delete file
 			err := os.Remove(lruModel.Path)

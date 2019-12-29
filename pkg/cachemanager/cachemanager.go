@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/mKaloer/tfservingcache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
@@ -18,7 +20,7 @@ type Model struct {
 
 type ModelIdentifier struct {
 	ModelName string
-	Version   string
+	Version   int64
 }
 
 type CacheManager struct {
@@ -27,6 +29,7 @@ type CacheManager struct {
 	ModelProvider                ModelProvider
 	LocalCache                   ModelCache
 	TFServingServerModelBasePath string
+	ServingController            TFServingController
 	rwMux                        sync.RWMutex
 }
 
@@ -52,7 +55,23 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			return err
 		}
 		cache.LocalCache.Put(identifier, model)
-		ReloadConfig(cache.LocalCache.ListModels(), cache.TFServingServerModelBasePath)
+		err = cache.ServingController.ReloadConfig(cache.LocalCache.ListModels(), cache.TFServingServerModelBasePath)
+		if err != nil {
+			log.WithError(err).Error("Error while loading model")
+			return err
+		}
+		for i := 1; i < 10; i++ {
+			status, err := cache.ServingController.GetModelStatus(model)
+			if err != nil {
+				log.WithError(err).Errorf("Error getting model status. Retry: %d", i)
+			} else if status == ModelVersionStatus_AVAILABLE {
+				log.Info("Model available")
+				break
+			} else {
+				log.Debugf("Model not yet available: %s. Retry: %d", status.String(), i)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 	return nil
 }
@@ -64,30 +83,45 @@ func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Mod
 	hostModelPath := cache.LocalCache.ModelPath(model)
 	fileExists := isPresent && fileOrDirExists(hostModelPath)
 	if isPresent && !fileExists {
-		log.Warnf("Model in cache but not present on disk. Name: %s, Version: %s, path: %s",
+		log.Warnf("Model in cache but not present on disk. Name: %s, Version: %d, path: %s",
 			identifier.ModelName, identifier.Version, hostModelPath)
 	}
 	return model, fileExists
 }
 
-func New(localRestUrl string, modelProvider ModelProvider, modelCache ModelCache, tfServingServerBasePath string) *CacheManager {
-	restUrl, err := url.Parse(localRestUrl)
+func New(
+	modelProvider ModelProvider,
+	modelCache ModelCache,
+	tfServingServerBasePath string,
+	tfservingServerGRPCHost string,
+	tfservingServerRESTHost string,
+) *CacheManager {
+	restUrl, err := url.Parse(tfservingServerRESTHost)
 	if err != nil {
 		return nil
 	}
+
+	servingController := TFServingController{grpcHost: tfservingServerGRPCHost, restHost: tfservingServerRESTHost}
 
 	h := &CacheManager{
 		localRestUrl:                 *restUrl,
 		ModelProvider:                modelProvider,
 		LocalCache:                   modelCache,
+		ServingController:            servingController,
 		TFServingServerModelBasePath: tfServingServerBasePath,
 	}
 
 	director := func(req *http.Request, modelName string, version string) {
 		log.Infof("Fetching model...")
-		identifier := ModelIdentifier{ModelName: modelName,
-			Version: version}
-		err := h.fetchModel(identifier)
+
+		modelVersion, err := strconv.ParseInt(version, 10, 64)
+		if err != nil {
+			log.WithError(err).Errorf("Error handling request. Version must be valid integer: '%s'", version)
+			req.Response.StatusCode = 500
+			return
+		}
+		identifier := ModelIdentifier{ModelName: modelName, Version: modelVersion}
+		err = h.fetchModel(identifier)
 		if err != nil {
 			log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
 			req.Response.StatusCode = 500

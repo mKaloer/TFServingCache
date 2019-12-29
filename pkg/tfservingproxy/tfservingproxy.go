@@ -1,6 +1,7 @@
 package tfservingproxy
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
 	"regexp"
@@ -15,14 +16,38 @@ type RestProxy struct {
 }
 
 func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
-	return handler.RestProxy.ServeHTTP
+	// Wrap proxy in custom function to check for invalid requests
+	proxyFun := func(rw http.ResponseWriter, req *http.Request) {
+		log.Debugf("Handling URL: %s", req.URL.String())
+		matches := tfServingRestURLMatch.FindStringSubmatch(req.URL.String())
+		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
+		if matches[3] == "" {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(rw).Encode(struct {
+				Status  string
+				Message string
+			}{
+				Status:  "Error",
+				Message: "Model version must be provided",
+			})
+			return
+		}
+		handler.RestProxy.ServeHTTP(rw, req)
+	}
+	return proxyFun
+}
+
+type InvalidRequestError struct {
+	Url     string
+	message string
 }
 
 func NewRestProxy(handler func(req *http.Request, modelName string, version string)) *RestProxy {
 	director := func(req *http.Request) {
 		log.Debugf("Handling URL: %s", req.URL.String())
 		matches := tfServingRestURLMatch.FindStringSubmatch(req.URL.String())
-		log.Infof("Model name: '%s' Version: '%s'", matches[1], matches[3])
+		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
 		handler(req, matches[1], matches[3])
 	}
 	h := &RestProxy{
