@@ -1,18 +1,57 @@
 package taskhandler
 
 import (
+	"errors"
+	"fmt"
+
 	"stathat.com/c/consistent"
 )
 
-type ClusterIpList struct {
-	consistent *consistent.Consistent
+type DiscoveryService interface {
+	AddNodeListUpdated(chan []string)
+	NodeName() string
 }
 
-func NewCluster() *ClusterIpList {
+type ClusterState int
+
+const (
+	ClusterStateReady ClusterState = iota
+	ClusterStateStarted
+)
+
+type ClusterIpList struct {
+	consistent       *consistent.Consistent
+	DiscoveryService DiscoveryService
+	State            ClusterState
+}
+
+func NewCluster(dService DiscoveryService) *ClusterIpList {
 	cluster := &ClusterIpList{
-		consistent: consistent.New(),
+		consistent:       consistent.New(),
+		DiscoveryService: dService,
+		State:            ClusterStateReady,
 	}
+
 	return cluster
+}
+
+func (cluster *ClusterIpList) Connect() error {
+	if cluster.State != ClusterStateReady {
+		return errors.New(fmt.Sprintf("Illegal cluster state: %s", cluster.State.String()))
+	}
+
+	updateChan := make(chan []string)
+	cluster.DiscoveryService.AddNodeListUpdated(updateChan)
+	go clusterUpdated(cluster, updateChan)
+
+	return nil
+}
+
+func clusterUpdated(cluster *ClusterIpList, updateChan chan []string) {
+	for cluster.State == ClusterStateStarted {
+		memberships := <-updateChan
+		cluster.consistent.Set(memberships)
+	}
 }
 
 func (cluster *ClusterIpList) FindNodeForKey(key string) ([]string, error) {
@@ -23,10 +62,12 @@ func (cluster *ClusterIpList) FindNodeForKey(key string) ([]string, error) {
 	return nodes, nil
 }
 
-func (cluster *ClusterIpList) AddNode(node string) {
-	cluster.consistent.Add(node)
-}
-
-func (cluster *ClusterIpList) RemoveNode(node string) {
-	cluster.consistent.Remove(node)
+func (state *ClusterState) String() string {
+	switch *state {
+	case ClusterStateReady:
+		return "READY"
+	case ClusterStateStarted:
+		return "STARTED"
+	}
+	return "UNKNOWN"
 }

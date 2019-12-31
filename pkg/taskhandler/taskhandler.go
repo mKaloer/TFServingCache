@@ -18,9 +18,9 @@ func (handler *TaskHandler) ServeRest() func(http.ResponseWriter, *http.Request)
 	return handler.RestProxy.Serve()
 }
 
-func New() *TaskHandler {
+func New(dService DiscoveryService) *TaskHandler {
 	h := &TaskHandler{
-		Cluster: NewCluster(),
+		Cluster: NewCluster(dService),
 	}
 
 	director := func(req *http.Request, modelName string, version string) {

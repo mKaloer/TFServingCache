@@ -1,6 +1,7 @@
 package cachemanager
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,7 @@ type CacheManager struct {
 	LocalCache                   ModelCache
 	TFServingServerModelBasePath string
 	ServingController            TFServingController
+	ModelFetchTimeout            float32 // model fetch timeout in seconds
 	rwMux                        sync.RWMutex
 }
 
@@ -60,17 +62,22 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			log.WithError(err).Error("Error while loading model")
 			return err
 		}
-		for i := 1; i < 10; i++ {
+		totalTime := float32(0.0)
+		for totalTime == 0 || totalTime < cache.ModelFetchTimeout {
 			status, err := cache.ServingController.GetModelStatus(model)
 			if err != nil {
-				log.WithError(err).Errorf("Error getting model status. Retry: %d", i)
+				log.WithError(err).Errorf("Error getting model status. Duration: %fs", totalTime)
 			} else if status == ModelVersionStatus_AVAILABLE {
 				log.Info("Model available")
 				break
 			} else {
-				log.Debugf("Model not yet available: %s. Retry: %d", status.String(), i)
+				log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
 			}
-			time.Sleep(500 * time.Millisecond)
+			totalTime += 0.5
+			time.Sleep(time.Millisecond * 500)
+		}
+		if totalTime >= cache.ModelFetchTimeout {
+			return errors.New("Timeout: Model did not load in time")
 		}
 	}
 	return nil
@@ -95,6 +102,7 @@ func New(
 	tfServingServerBasePath string,
 	tfservingServerGRPCHost string,
 	tfservingServerRESTHost string,
+	modelFetchTimeout float32,
 ) *CacheManager {
 	restUrl, err := url.Parse(tfservingServerRESTHost)
 	if err != nil {
@@ -109,6 +117,7 @@ func New(
 		LocalCache:                   modelCache,
 		ServingController:            servingController,
 		TFServingServerModelBasePath: tfServingServerBasePath,
+		ModelFetchTimeout:            modelFetchTimeout,
 	}
 
 	director := func(req *http.Request, modelName string, version string) {
