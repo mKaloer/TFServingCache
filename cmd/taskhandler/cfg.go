@@ -1,15 +1,18 @@
 package main
 
-import "flag"
+import (
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+)
 
-type Config struct {
-	RestPort int
-	GrpcPort int
-}
+func SetConfig() {
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+	viper.SetConfigType("yaml")
 
-func SetConfig() *Config {
-	configs := Config{}
-	flag.IntVar(&configs.RestPort, "restPort", 8090, "Port for REST taskhandler service.")
-	flag.IntVar(&configs.GrpcPort, "grpcPort", 8091, "Port for GRPC taskhandler service.")
-	return &configs
+	err := viper.ReadInConfig() // Find and read the config file
+	if err != nil {             // Handle errors reading the config file
+		log.WithError(err).Panic("Could not read config file")
+	}
+
 }

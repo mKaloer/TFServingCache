@@ -6,17 +6,22 @@ import (
 
 	"github.com/mKaloer/tfservingcache/pkg/cachemanager"
 	"github.com/mKaloer/tfservingcache/pkg/cachemanager/diskmodelprovider"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 func main() {
-	config := SetConfig()
+	SetConfig()
 
-	provider := diskmodelprovider.DiskModelProvider{
-		BaseDir: config.ModelRepoDir,
+	if viper.GetString("modelProvider.type") != "diskProvider" {
+		log.Fatalf("Unsupported modelProvider: %s", viper.GetString("modelProvider.type"))
 	}
-	modelCache := cachemanager.NewLRUCache(config.HostServingModelDir, config.ModelCacheSize)
+	provider := diskmodelprovider.DiskModelProvider{
+		BaseDir: viper.GetString("modelProvider.baseDir"),
+	}
+	modelCache := cachemanager.NewLRUCache(viper.GetString("modelCache.hostModelPath"), viper.GetInt64("modelCache.size"))
 	c := cachemanager.New(provider, &modelCache,
-		config.ServerServingModelDir, config.ServingGrpcHost, config.ServingRestHost, 10.0)
+		viper.GetString("serving.servingModelPath"), viper.GetString("serving.grpcHost"), viper.GetString("serving.restHost"), 10.0)
 	http.HandleFunc("/v1/models/", c.ServeRest())
-	http.ListenAndServe(fmt.Sprintf(":%d", config.RestPort), nil)
+	http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("restPort")), nil)
 }

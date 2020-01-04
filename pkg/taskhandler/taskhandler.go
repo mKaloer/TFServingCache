@@ -47,3 +47,11 @@ func New(dService DiscoveryService) *TaskHandler {
 
 	return h
 }
+
+func (handler *TaskHandler) ConnectToCluster() error {
+	return handler.Cluster.Connect()
+}
+
+func (handler *TaskHandler) DisconnectFromCluster() error {
+	return handler.Cluster.Disconnect()
+}

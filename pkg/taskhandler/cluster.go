@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 
+	log "github.com/sirupsen/logrus"
 	"stathat.com/c/consistent"
 )
 
 type DiscoveryService interface {
-	AddNodeListUpdated(chan []string)
-	NodeName() string
+	AddNodeListUpdated(string, chan []string)
+	RemoveNodeListUpdated(string)
+	RegisterService() error
+	UnregisterService() error
 }
 
 type ClusterState int
@@ -23,6 +26,7 @@ type ClusterIpList struct {
 	consistent       *consistent.Consistent
 	DiscoveryService DiscoveryService
 	State            ClusterState
+	memberUpdateChan chan []string
 }
 
 func NewCluster(dService DiscoveryService) *ClusterIpList {
@@ -40,9 +44,32 @@ func (cluster *ClusterIpList) Connect() error {
 		return errors.New(fmt.Sprintf("Illegal cluster state: %s", cluster.State.String()))
 	}
 
-	updateChan := make(chan []string)
-	cluster.DiscoveryService.AddNodeListUpdated(updateChan)
-	go clusterUpdated(cluster, updateChan)
+	cluster.memberUpdateChan = make(chan []string)
+	cluster.DiscoveryService.AddNodeListUpdated("clusterChan", cluster.memberUpdateChan)
+
+	err := cluster.DiscoveryService.RegisterService()
+	if err != nil {
+		log.WithError(err).Fatal("Could not register discovery service")
+		return err
+	}
+	cluster.State = ClusterStateStarted
+	go clusterUpdated(cluster, cluster.memberUpdateChan)
+
+	return nil
+}
+
+func (cluster *ClusterIpList) Disconnect() error {
+	if cluster.State != ClusterStateStarted {
+		return errors.New(fmt.Sprintf("Illegal cluster state: %s", cluster.State.String()))
+	}
+
+	cluster.DiscoveryService.RemoveNodeListUpdated("clusterChan")
+	cluster.State = ClusterStateReady
+	err := cluster.DiscoveryService.UnregisterService()
+	if err != nil {
+		log.WithError(err).Fatal("Could not unregister discovery service")
+		return err
+	}
 
 	return nil
 }
