@@ -49,7 +49,7 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 	serviceDef := &api.AgentServiceRegistration{
 		Name: consul.ServiceName,
 		ID:   consul.ServiceID,
-		Port: viper.GetInt("restPort"),
+		Port: viper.GetInt("cacheRestPort"),
 		Check: &api.AgentServiceCheck{
 			TTL:                            consul.ttl.String(),
 			DeregisterCriticalServiceAfter: (consul.ttl * 100).String(),
@@ -68,7 +68,7 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 			if err != nil {
 				log.WithError(err).Error("Error getting services")
 			} else {
-				passingNodes := make([]string, len(res))
+				passingNodes := make([]string, 0, len(res))
 				for k := range res {
 					id := res[k].Service.ID
 					port := res[k].Service.Port

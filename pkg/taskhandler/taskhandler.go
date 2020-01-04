@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/mKaloer/tfservingcache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
@@ -23,16 +24,20 @@ func New(dService DiscoveryService) *TaskHandler {
 		Cluster: NewCluster(dService),
 	}
 
+	rand.Seed(time.Now().UnixNano())
+
 	director := func(req *http.Request, modelName string, version string) {
 		var modelKey = modelName + "##" + version
 		nodes, err := h.Cluster.FindNodeForKey(modelKey)
 		if err != nil {
+			log.WithError(err).Error("Error finding node")
 			return
 		}
 		// Pick random node
 		selectedNode := nodes[rand.Intn(len(nodes))]
 		selectedUrl, err := url.Parse("http://" + selectedNode)
 		if err != nil {
+			log.WithError(err).Error("Error parsing proxy url")
 			return
 		}
 		selectedUrl.Path = req.URL.Path
