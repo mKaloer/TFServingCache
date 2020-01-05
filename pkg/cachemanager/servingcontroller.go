@@ -111,6 +111,32 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 	return 0, errors.New("Model not found")
 }
 
+func (server *TFServingController) GetModelStates() ([]ModelVersionStatus_State, error) {
+	conn, err := grpc.Dial(server.grpcHost, grpc.WithInsecure())
+	if err != nil {
+		log.WithError(err).Error("Cannot connect to the grpc server")
+		return nil, err
+	}
+	defer conn.Close()
+
+	client := serving.NewModelServiceClient(conn)
+
+	log.Debug("Getting TF models status...")
+	resp, err := client.GetModelStatus(context.Background(), &serving.GetModelStatusRequest{})
+	if err != nil {
+		log.WithError(err).Error("Error getting tf serving model status")
+		return nil, err
+	} else {
+		log.Debug("TF model status received successfully")
+	}
+
+	models := make([]ModelVersionStatus_State, 0)
+	for i := range resp.ModelVersionStatus {
+		models = append(models, modelVersionStatusStateFromTFState(resp.ModelVersionStatus[i].State))
+	}
+	return models, nil
+}
+
 func createModelConfig(models []*Model, tfServingServerModelDir string) []*serving.ModelConfig {
 	
 	distinctModels := map[string]*serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{}

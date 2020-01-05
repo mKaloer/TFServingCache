@@ -41,7 +41,7 @@ func New(dService DiscoveryService) *TaskHandler {
 			return
 		}
 		selectedUrl.Path = req.URL.Path
-		log.Infof("Forwarding to %s", selectedUrl.String())
+		log.Infof("Forwarding to cache: %s", selectedUrl.String())
 		req.URL = selectedUrl
 		if _, ok := req.Header["User-Agent"]; !ok {
 			// explicitly disable User-Agent so it's not set to default value

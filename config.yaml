@@ -13,6 +13,7 @@ serving:
   servingModelPath: "/models"
   grpcHost: "localhost:8500"
   restHost: "http://localhost:8501"
+  maxConcurrentModels: 2
 
 proxy:
   replicasPerModel: 3

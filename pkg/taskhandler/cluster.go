@@ -84,7 +84,7 @@ func clusterUpdated(cluster *ClusterIpList, updateChan chan []string) {
 }
 
 func (cluster *ClusterIpList) FindNodeForKey(key string) ([]string, error) {
-	nodes, err := cluster.consistent.GetN(key, int(math.Min(viper.GetFloat64("proxy.replicasPerModel"), 1)))
+	nodes, err := cluster.consistent.GetN(key, int(math.Max(viper.GetFloat64("proxy.replicasPerModel"), 1)))
 	if err != nil {
 		return nil, err
 	}

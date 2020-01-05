@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/etcd"
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager/diskmodelprovider"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/consul"
+	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/etcd"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -44,7 +44,11 @@ func CreateCacheManager() *cachemanager.CacheManager {
 	}
 	modelCache := cachemanager.NewLRUCache(viper.GetString("modelCache.hostModelPath"), viper.GetInt64("modelCache.size"))
 	c := cachemanager.New(provider, &modelCache,
-		viper.GetString("serving.servingModelPath"), viper.GetString("serving.grpcHost"), viper.GetString("serving.restHost"), 10.0)
+		viper.GetString("serving.servingModelPath"),
+		viper.GetString("serving.grpcHost"),
+		viper.GetString("serving.restHost"),
+		10.0,
+		viper.GetInt("serving.maxConcurrentModels"))
 	return c
 }
 

@@ -2,6 +2,7 @@ package cachemanager
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ type CacheManager struct {
 	localRestUrl                 url.URL
 	ModelProvider                ModelProvider
 	LocalCache                   ModelCache
+	MaxConcurrentModels          int
 	TFServingServerModelBasePath string
 	ServingController            TFServingController
 	ModelFetchTimeout            float32 // model fetch timeout in seconds
@@ -40,7 +42,7 @@ func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request
 }
 
 func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
-	_, isPresent := cache.tryGetModelFromCache(identifier)
+	model, isPresent := cache.tryGetModelFromCache(identifier)
 	if !isPresent {
 		// Model does not exist - get size, then put in cache
 		cache.rwMux.Lock()
@@ -57,28 +59,14 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			return err
 		}
 		cache.LocalCache.Put(identifier, model)
-		err = cache.ServingController.ReloadConfig(cache.LocalCache.ListModels(), cache.TFServingServerModelBasePath)
-		if err != nil {
-			log.WithError(err).Error("Error while loading model")
-			return err
-		}
-		totalTime := float32(0.0)
-		for totalTime == 0 || totalTime < cache.ModelFetchTimeout {
-			status, err := cache.ServingController.GetModelStatus(model)
-			if err != nil {
-				log.WithError(err).Errorf("Error getting model status. Duration: %fs", totalTime)
-			} else if status == ModelVersionStatus_AVAILABLE {
-				log.Info("Model available")
-				break
-			} else {
-				log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
-			}
-			totalTime += 0.5
-			time.Sleep(time.Millisecond * 500)
-		}
-		if totalTime >= cache.ModelFetchTimeout {
-			return errors.New("Timeout: Model did not load in time")
-		}
+		cache.reloadServingConfig(model)
+	} else if state, err := cache.ServingController.GetModelStatus(model); err != nil ||
+		state == ModelVersionStatus_UNLOADING ||
+		state == ModelVersionStatus_END {
+		// Model in disk cache but not loaded in serving
+		cache.rwMux.Lock()
+		defer cache.rwMux.Unlock()
+		cache.reloadServingConfig(model)
 	}
 	return nil
 }
@@ -96,6 +84,34 @@ func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Mod
 	return model, fileExists
 }
 
+func (cache *CacheManager) reloadServingConfig(requestedModel Model) error {
+	availableModels := cache.LocalCache.ListModels()
+	numActiveModels := int(math.Min(float64(len(availableModels)), float64(cache.MaxConcurrentModels)))
+	err := cache.ServingController.ReloadConfig(availableModels[:numActiveModels], cache.TFServingServerModelBasePath)
+	if err != nil {
+		log.WithError(err).Error("Error while loading model")
+		return err
+	}
+	totalTime := float32(0.0)
+	for totalTime == 0 || totalTime < cache.ModelFetchTimeout {
+		status, err := cache.ServingController.GetModelStatus(requestedModel)
+		if err != nil {
+			log.WithError(err).Errorf("Error getting model status. Duration: %fs", totalTime)
+		} else if status == ModelVersionStatus_AVAILABLE {
+			log.Info("Model available")
+			break
+		} else {
+			log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
+		}
+		totalTime += 0.5
+		time.Sleep(time.Millisecond * 500)
+	}
+	if totalTime >= cache.ModelFetchTimeout {
+		return errors.New("Timeout: Model did not load in time")
+	}
+	return nil
+}
+
 func New(
 	modelProvider ModelProvider,
 	modelCache ModelCache,
@@ -103,6 +119,7 @@ func New(
 	tfservingServerGRPCHost string,
 	tfservingServerRESTHost string,
 	modelFetchTimeout float32,
+	maxConcurrentModels int,
 ) *CacheManager {
 	restUrl, err := url.Parse(tfservingServerRESTHost)
 	if err != nil {
@@ -118,6 +135,7 @@ func New(
 		ServingController:            servingController,
 		TFServingServerModelBasePath: tfServingServerBasePath,
 		ModelFetchTimeout:            modelFetchTimeout,
+		MaxConcurrentModels:          maxConcurrentModels,
 	}
 
 	director := func(req *http.Request, modelName string, version string) {

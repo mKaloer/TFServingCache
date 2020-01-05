@@ -3,6 +3,7 @@ package etcd
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ type EtcdDiscoveryService struct {
 	ttl              time.Duration
 	HealthCheckFun   func() (bool, error)
 	serviceKey       string
+	outboundIp       string
 }
 
 func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryService, error) {
@@ -34,6 +36,7 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryServic
 	}
 
 	ttl := viper.GetDuration("serviceDiscovery.heartbeatTTL") * time.Second
+	ip := getOutboundIP().String()
 	service := &EtcdDiscoveryService{
 		ListUpdatedChans: make(map[string]chan []string, 0),
 		EtcdClient:       c,
@@ -41,6 +44,7 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryServic
 		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
 		ServiceId:        uuid.New().String(),
 		HealthCheckFun:   healthCheck,
+		outboundIp:       ip,
 	}
 
 	service.serviceKey = fmt.Sprintf("/service/%s/%s", service.ServiceName, service.ServiceId)
@@ -119,9 +123,23 @@ func (service *EtcdDiscoveryService) updateTTL(check func() (bool, error)) {
 		if err != nil {
 			log.WithError(err).Error("Could not set etc.d key")
 		}
-		_, err = service.EtcdClient.KV.Put(context.Background(), service.serviceKey, fmt.Sprintf("myip:%d", port), clientv3.WithLease(lease.ID))
+		_, err = service.EtcdClient.KV.Put(context.Background(), service.serviceKey, fmt.Sprintf("%s:%d", service.outboundIp, port), clientv3.WithLease(lease.ID))
 		if err != nil {
 			log.WithError(err).Error("Could not set etc.d key")
 		}
 	}
+}
+
+// Get preferred outbound ip of this machine
+// Source: https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go
+func getOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
