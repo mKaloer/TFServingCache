@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mKaloer/tfservingcache/pkg/tfservingproxy"
+	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
 )
 

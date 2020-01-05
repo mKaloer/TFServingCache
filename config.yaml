@@ -14,8 +14,20 @@ serving:
   grpcHost: "localhost:8500"
   restHost: "http://localhost:8501"
 
+proxy:
+  replicasPerModel: 3
+
 serviceDiscovery:
-  type: consul
+  #### CONSUL ####
+  #type: consul
+  #serviceName: tfservingcache
+  #serviceId: foo1
+  #heartbeatTTL: 5
+  #### ETCD ####
+  type: etcd
   serviceName: tfservingcache
-  serviceId: foo1
   heartbeatTTL: 5
+  endpoints: ["localhost:2379"]
+  authorization:
+    username: root
+    password: foobar

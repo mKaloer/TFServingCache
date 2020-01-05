@@ -3,8 +3,10 @@ package taskhandler
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"stathat.com/c/consistent"
 )
 
@@ -82,7 +84,7 @@ func clusterUpdated(cluster *ClusterIpList, updateChan chan []string) {
 }
 
 func (cluster *ClusterIpList) FindNodeForKey(key string) ([]string, error) {
-	nodes, err := cluster.consistent.GetN(key, 3)
+	nodes, err := cluster.consistent.GetN(key, int(math.Min(viper.GetFloat64("proxy.replicasPerModel"), 1)))
 	if err != nil {
 		return nil, err
 	}

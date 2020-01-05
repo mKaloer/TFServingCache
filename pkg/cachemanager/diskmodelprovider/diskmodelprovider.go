@@ -10,7 +10,7 @@ import (
 	"github.com/otiai10/copy"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/mKaloer/tfservingcache/pkg/cachemanager"
+	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
 )
 
 type DiskModelProvider struct {

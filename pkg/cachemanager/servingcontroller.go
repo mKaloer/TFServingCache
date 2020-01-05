@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"path"
-	pb "tensorflow_serving/apis"
-	config "tensorflow_serving/config"
-	storage_path "tensorflow_serving/sources/storage_path"
+	serving "github.com/mKaloer/TFServingCache/proto/tensorflow/serving"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
 	log "github.com/sirupsen/logrus"
@@ -51,10 +49,11 @@ const (
 
 func (server *TFServingController) ReloadConfig(models []*Model, tfServingServerModelDir string) error {
 	configs := createModelConfig(models, tfServingServerModelDir)
-	request := &pb.ReloadConfigRequest{
-		Config: &config.ModelServerConfig{
-			Config: &config.ModelServerConfig_ModelConfigList{
-				ModelConfigList: &config.ModelConfigList{
+	
+	request := &serving.ReloadConfigRequest{
+		Config: &serving.ModelServerConfig{
+			Config: &serving.ModelServerConfig_ModelConfigList{
+				ModelConfigList: &serving.ModelConfigList{
 					Config: configs,
 				},
 			},
@@ -68,9 +67,9 @@ func (server *TFServingController) ReloadConfig(models []*Model, tfServingServer
 	}
 	defer conn.Close()
 
-	client := pb.NewModelServiceClient(conn)
+	client := serving.NewModelServiceClient(conn)
 
-	log.Debug("Updating TF config...")
+	log.Debug("Updating TF serving...")
 	_, err = client.HandleReloadConfigRequest(context.Background(), request)
 	if err != nil {
 		log.WithError(err).Error("Error updating tf config")
@@ -90,12 +89,12 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 	}
 	defer conn.Close()
 
-	client := pb.NewModelServiceClient(conn)
+	client := serving.NewModelServiceClient(conn)
 
 	log.Debug("Getting TF model status...")
-	statusRequest := &pb.GetModelStatusRequest{
-		ModelSpec: &pb.ModelSpec{
-			Name: model.Identifier.ModelName, Version: &wrappers.Int64Value{Value: model.Identifier.Version},
+	statusRequest := &serving.GetModelStatusRequest{
+		ModelSpec: &serving.ModelSpec{
+			Name: model.Identifier.ModelName, VersionChoice: &serving.ModelSpec_Version{Version: &wrappers.Int64Value{Value: model.Identifier.Version}},
 		},
 	}
 	resp, err := client.GetModelStatus(context.Background(), statusRequest)
@@ -112,10 +111,11 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 	return 0, errors.New("Model not found")
 }
 
-func createModelConfig(models []*Model, tfServingServerModelDir string) []*config.ModelConfig {
-	distinctModels := map[string]*storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{}
+func createModelConfig(models []*Model, tfServingServerModelDir string) []*serving.ModelConfig {
+	
+	distinctModels := map[string]*serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{}
 	// Number of configs will be at most len(models) large (also the expected val)
-	var configs = make([]*config.ModelConfig, 0, len(models))
+	var configs = make([]*serving.ModelConfig, 0, len(models))
 	for _, model := range models {
 		// Check for existing model of same name
 		existingVersions, exists := distinctModels[model.Identifier.ModelName]
@@ -123,16 +123,16 @@ func createModelConfig(models []*Model, tfServingServerModelDir string) []*confi
 			existingVersions.Versions = append(existingVersions.Versions, model.Identifier.Version)
 		} else {
 			// Create new config
-			modelVersions := &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{
+			modelVersions := &serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{
 				Versions: []int64{model.Identifier.Version},
 			}
 			distinctModels[model.Identifier.ModelName] = modelVersions
-			configs = append(configs, &config.ModelConfig{
+			configs = append(configs, &serving.ModelConfig{
 				Name:          model.Identifier.ModelName,
 				BasePath:      path.Join(tfServingServerModelDir, model.Identifier.ModelName),
 				ModelPlatform: "tensorflow",
-				ModelVersionPolicy: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy{
-					PolicyChoice: &storage_path.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific_{
+				ModelVersionPolicy: &serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy{
+					PolicyChoice: &serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific_{
 						Specific: modelVersions,
 					},
 				},
@@ -142,19 +142,19 @@ func createModelConfig(models []*Model, tfServingServerModelDir string) []*confi
 	return configs
 }
 
-func modelVersionStatusStateFromTFState(state pb.ModelVersionStatus_State) ModelVersionStatus_State {
+func modelVersionStatusStateFromTFState(state serving.ModelVersionStatus_State) ModelVersionStatus_State {
 	switch state {
-	case pb.ModelVersionStatus_UNKNOWN:
+	case serving.ModelVersionStatus_UNKNOWN:
 		return ModelVersionStatus_UNKNOWN
-	case pb.ModelVersionStatus_START:
+	case serving.ModelVersionStatus_START:
 		return ModelVersionStatus_START
-	case pb.ModelVersionStatus_LOADING:
+	case serving.ModelVersionStatus_LOADING:
 		return ModelVersionStatus_LOADING
-	case pb.ModelVersionStatus_AVAILABLE:
+	case serving.ModelVersionStatus_AVAILABLE:
 		return ModelVersionStatus_AVAILABLE
-	case pb.ModelVersionStatus_UNLOADING:
+	case serving.ModelVersionStatus_UNLOADING:
 		return ModelVersionStatus_UNLOADING
-	case pb.ModelVersionStatus_END:
+	case serving.ModelVersionStatus_END:
 		return ModelVersionStatus_END
 	default:
 		return ModelVersionStatus_UNKNOWN
