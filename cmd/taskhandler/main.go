@@ -24,12 +24,19 @@ func main() {
 	cacheMux.HandleFunc("/v1/models/", cache.ServeRest())
 	go http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("cacheRestPort")), cacheMux)
 
+	go cache.GrpcProxy.Listen(viper.GetInt("cacheGrpcPort"))
+	defer cache.GrpcProxy.Close()
+
 	tHandler := taskhandler.New(dService)
 	err := tHandler.ConnectToCluster()
 	if err != nil {
 		log.WithError(err).Fatal("Could not connect to cluster")
 	}
 	defer tHandler.DisconnectFromCluster()
+
+	go tHandler.GrpcProxy.Listen(viper.GetInt("proxyGrpcPort"))
+	defer tHandler.GrpcProxy.Close()
+
 	proxyMux := http.NewServeMux()
 	proxyMux.HandleFunc("/v1/models/", tHandler.ServeRest())
 	http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("proxyRestPort")), proxyMux)

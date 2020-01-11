@@ -1,5 +1,7 @@
-proxyRestPort: 8091
-cacheRestPort: 8092
+proxyRestPort: 8093
+proxyGrpcPort: 8100
+cacheRestPort: 8094
+cacheGrpcPort: 8095
 
 modelProvider:
   type: diskProvider

@@ -12,6 +12,7 @@ import (
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
 type Model struct {
@@ -27,7 +28,9 @@ type ModelIdentifier struct {
 
 type CacheManager struct {
 	RestProxy                    *tfservingproxy.RestProxy
-	localRestUrl                 url.URL
+	GrpcProxy                    *tfservingproxy.GrpcProxy
+	localRestURL                 url.URL
+	localGrpcURL                 string
 	ModelProvider                ModelProvider
 	LocalCache                   ModelCache
 	MaxConcurrentModels          int
@@ -129,7 +132,8 @@ func New(
 	servingController := TFServingController{grpcHost: tfservingServerGRPCHost, restHost: tfservingServerRESTHost}
 
 	h := &CacheManager{
-		localRestUrl:                 *restUrl,
+		localRestURL:                 *restUrl,
+		localGrpcURL:                 tfservingServerGRPCHost,
 		ModelProvider:                modelProvider,
 		LocalCache:                   modelCache,
 		ServingController:            servingController,
@@ -137,38 +141,56 @@ func New(
 		ModelFetchTimeout:            modelFetchTimeout,
 		MaxConcurrentModels:          maxConcurrentModels,
 	}
-
-	director := func(req *http.Request, modelName string, version string) {
-		log.Infof("Fetching model...")
-
-		modelVersion, err := strconv.ParseInt(version, 10, 64)
-		if err != nil {
-			log.WithError(err).Errorf("Error handling request. Version must be valid integer: '%s'", version)
-			req.Response.StatusCode = 500
-			return
-		}
-		identifier := ModelIdentifier{ModelName: modelName, Version: modelVersion}
-		err = h.fetchModel(identifier)
-		if err != nil {
-			log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
-			req.Response.StatusCode = 500
-			return
-		}
-		localUrl := *restUrl
-		localUrl.Path = req.URL.Path
-		log.Infof("Forwarding to %s", localUrl.String())
-		req.URL = &localUrl
-		if _, ok := req.Header["User-Agent"]; !ok {
-			// explicitly disable User-Agent so it's not set to default value
-			req.Header.Set("User-Agent", "")
-		}
-	}
-	h.RestProxy = tfservingproxy.NewRestProxy(director)
-
+	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
+	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
 	return h
 }
 
 func fileOrDirExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
+}
+
+func (cache *CacheManager) restDirector(req *http.Request, modelName string, version string) {
+	err := cache.handleModelRequest(modelName, version)
+	if err != nil {
+		log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
+		req.Response.StatusCode = 500
+		return
+	}
+	localURL := cache.localRestURL
+	localURL.Path = req.URL.Path
+	log.Infof("Forwarding to %s", localURL.String())
+	req.URL = &localURL
+	if _, ok := req.Header["User-Agent"]; !ok {
+		// explicitly disable User-Agent so it's not set to default value
+		req.Header.Set("User-Agent", "")
+	}
+}
+
+func (cache *CacheManager) grpcDirector(modelName string, version string) (*grpc.ClientConn, error) {
+	err := cache.handleModelRequest(modelName, version)
+	if err != nil {
+		log.WithError(err).Errorf("Error handling request")
+		return nil, err
+	}
+	// Return new grpc client
+	return grpc.Dial(cache.localGrpcURL, grpc.WithInsecure())
+}
+
+func (cache *CacheManager) handleModelRequest(modelName string, version string) error {
+	log.Infof("Handling request: %s:%s", modelName, version)
+
+	modelVersion, err := strconv.ParseInt(version, 10, 64)
+	if err != nil {
+		log.WithError(err).Errorf("Error handling request. Version must be valid integer: '%s'", version)
+		return err
+	}
+	identifier := ModelIdentifier{ModelName: modelName, Version: modelVersion}
+	err = cache.fetchModel(identifier)
+	if err != nil {
+		log.WithError(err).Errorf("Error handling request.")
+		return err
+	}
+	return nil
 }

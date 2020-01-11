@@ -117,13 +117,14 @@ func (service *EtcdDiscoveryService) RemoveNodeListUpdated(key string) {
 
 func (service *EtcdDiscoveryService) updateTTL(check func() (bool, error)) {
 	ticker := time.NewTicker(service.ttl / 2)
-	port := viper.GetInt("cacheRestPort")
+	restPort := viper.GetInt("cacheRestPort")
+	grpcPort := viper.GetInt("cacheGrpcPort")
 	for range ticker.C {
 		lease, err := service.EtcdClient.Lease.Grant(context.Background(), int64(service.ttl.Seconds()))
 		if err != nil {
 			log.WithError(err).Error("Could not set etc.d key")
 		}
-		_, err = service.EtcdClient.KV.Put(context.Background(), service.serviceKey, fmt.Sprintf("%s:%d", service.outboundIp, port), clientv3.WithLease(lease.ID))
+		_, err = service.EtcdClient.KV.Put(context.Background(), service.serviceKey, fmt.Sprintf("%s:%d:%d", service.outboundIp, restPort, grpcPort), clientv3.WithLease(lease.ID))
 		if err != nil {
 			log.WithError(err).Error("Could not set etc.d key")
 		}

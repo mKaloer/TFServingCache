@@ -49,7 +49,10 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 	serviceDef := &api.AgentServiceRegistration{
 		Name: consul.ServiceName,
 		ID:   consul.ServiceID,
-		Port: viper.GetInt("cacheRestPort"),
+		Tags: []string{
+			fmt.Sprintf("rest:%d", viper.GetInt("cacheRestPort")),
+			fmt.Sprintf("rest:%d", viper.GetInt("cacheRestPort")),
+		},
 		Check: &api.AgentServiceCheck{
 			TTL:                            consul.ttl.String(),
 			DeregisterCriticalServiceAfter: (consul.ttl * 100).String(),
@@ -71,14 +74,24 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 				passingNodes := make([]string, 0, len(res))
 				for k := range res {
 					id := res[k].Service.ID
-					port := res[k].Service.Port
+					grpcPort := ""
+					restPort := ""
+					for t := range res[k].Service.Tags {
+						switch res[k].Service.Tags[t][0:4] {
+						case "grpc":
+							grpcPort = res[k].Service.Tags[t][5:]
+						case "rest":
+							restPort = res[k].Service.Tags[t][5:]
+						}
+					}
+
 					addr := res[k].Service.Address
 					if addr == "" {
 						// Fallback to node addr
 						addr = res[k].Node.Address
 					}
-					log.Debugf("Found node: %s: %s:%d", id, addr, port)
-					passingNodes = append(passingNodes, fmt.Sprintf("%s:%d", addr, port))
+					log.Debugf("Found node: %s: %s:%s:%s", id, addr, restPort, grpcPort)
+					passingNodes = append(passingNodes, fmt.Sprintf("%s:%s:%s", addr, restPort, grpcPort))
 				}
 				for ch := range consul.ListUpdatedChans {
 					consul.ListUpdatedChans[ch] <- passingNodes

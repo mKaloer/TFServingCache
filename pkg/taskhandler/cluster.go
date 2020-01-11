@@ -62,7 +62,7 @@ func (cluster *ClusterIpList) Connect() error {
 
 func (cluster *ClusterIpList) Disconnect() error {
 	if cluster.State != ClusterStateStarted {
-		return errors.New(fmt.Sprintf("Illegal cluster state: %s", cluster.State.String()))
+		return fmt.Errorf("Illegal cluster state: %s", cluster.State.String())
 	}
 
 	cluster.DiscoveryService.RemoveNodeListUpdated("clusterChan")
