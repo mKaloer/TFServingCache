@@ -1,7 +1,6 @@
 package taskhandler
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -12,12 +11,17 @@ import (
 	"stathat.com/c/consistent"
 )
 
+// ServingService contains network information of a
+// service that provides TF Serving
 type ServingService struct {
 	Host     string
 	GrpcPort int
 	RestPort int
 }
 
+// DiscoveryService is a service discovery provider.
+// It has the responsibility to discover other
+// ServingServices and to register itself on the network.
 type DiscoveryService interface {
 	AddNodeListUpdated(string, chan []ServingService)
 	RemoveNodeListUpdated(string)
@@ -25,22 +29,29 @@ type DiscoveryService interface {
 	UnregisterService() error
 }
 
+// ClusterState represents the current state of the node
 type ClusterState int
 
 const (
+	// ClusterStateReady represents that the node is ready to connect to cluster
 	ClusterStateReady ClusterState = iota
+	// ClusterStateStarted represents that the node is connected to cluster
 	ClusterStateStarted
 )
 
-type ClusterIpList struct {
+// ClusterConnection represents a connection to a cluster,
+// and contains information such as the cluster membership list
+type ClusterConnection struct {
 	consistent       *consistent.Consistent
 	DiscoveryService DiscoveryService
 	State            ClusterState
 	memberUpdateChan chan []ServingService
 }
 
-func NewCluster(dService DiscoveryService) *ClusterIpList {
-	cluster := &ClusterIpList{
+// NewClusterConnection creates a new ClusterConnection.
+// It does not connect to the cluster before Connect() is called.
+func NewClusterConnection(dService DiscoveryService) *ClusterConnection {
+	cluster := &ClusterConnection{
 		consistent:       consistent.New(),
 		DiscoveryService: dService,
 		State:            ClusterStateReady,
@@ -49,9 +60,12 @@ func NewCluster(dService DiscoveryService) *ClusterIpList {
 	return cluster
 }
 
-func (cluster *ClusterIpList) Connect() error {
+// Connect connects the current node to the cluster,
+// that is, it registers the node and starts listening for
+// memebership updates.
+func (cluster *ClusterConnection) Connect() error {
 	if cluster.State != ClusterStateReady {
-		return errors.New(fmt.Sprintf("Illegal cluster state: %s", cluster.State.String()))
+		return fmt.Errorf("Illegal cluster state: %s", cluster.State.String())
 	}
 
 	cluster.memberUpdateChan = make(chan []ServingService)
@@ -68,7 +82,10 @@ func (cluster *ClusterIpList) Connect() error {
 	return nil
 }
 
-func (cluster *ClusterIpList) Disconnect() error {
+// Disconnect removes this node from the cluster. Notice
+// that it is not necesarraily unregistered immediately,
+// depending on the discovery service implementation.
+func (cluster *ClusterConnection) Disconnect() error {
 	if cluster.State != ClusterStateStarted {
 		return fmt.Errorf("Illegal cluster state: %s", cluster.State.String())
 	}
@@ -84,7 +101,7 @@ func (cluster *ClusterIpList) Disconnect() error {
 	return nil
 }
 
-func clusterUpdated(cluster *ClusterIpList, updateChan chan []ServingService) {
+func clusterUpdated(cluster *ClusterConnection, updateChan chan []ServingService) {
 	for cluster.State == ClusterStateStarted {
 		memberships := <-updateChan
 		services := make([]string, len(memberships))
@@ -95,7 +112,8 @@ func clusterUpdated(cluster *ClusterIpList, updateChan chan []ServingService) {
 	}
 }
 
-func (cluster *ClusterIpList) FindNodeForKey(key string) ([]ServingService, error) {
+// FindNodeForKey returns a node that can handle the model specified by the given key.
+func (cluster *ClusterConnection) FindNodeForKey(key string) ([]ServingService, error) {
 	nodes, err := cluster.consistent.GetN(key, int(math.Max(viper.GetFloat64("proxy.replicasPerModel"), 1)))
 	if err != nil {
 		return nil, err

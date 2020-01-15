@@ -12,19 +12,23 @@ import (
 	"google.golang.org/grpc"
 )
 
+// TaskHandler handles TFServing jobs. A TaskHandler is
+// usually associated with one TFServing server, e.g. as a sidecar.
 type TaskHandler struct {
-	Cluster   *ClusterIpList
+	Cluster   *ClusterConnection
 	RestProxy *tfservingproxy.RestProxy
 	GrpcProxy *tfservingproxy.GrpcProxy
 }
 
+// ServeRest returns a function for HTTP serving
 func (handler *TaskHandler) ServeRest() func(http.ResponseWriter, *http.Request) {
 	return handler.RestProxy.Serve()
 }
 
-func New(dService DiscoveryService) *TaskHandler {
+// NewTaskHandler creates a new TaskHandler
+func NewTaskHandler(dService DiscoveryService) *TaskHandler {
 	h := &TaskHandler{
-		Cluster: NewCluster(dService),
+		Cluster: NewClusterConnection(dService),
 	}
 
 	rand.Seed(time.Now().UnixNano())
@@ -35,14 +39,19 @@ func New(dService DiscoveryService) *TaskHandler {
 	return h
 }
 
+// ConnectToCluster makes this TaskHandler discoverable
+// in the cluster and starts listening for other members
 func (handler *TaskHandler) ConnectToCluster() error {
 	return handler.Cluster.Connect()
 }
 
+// DisconnectFromCluster disconnects the TaskHandler from the
+// cluster (eventually)
 func (handler *TaskHandler) DisconnectFromCluster() error {
 	return handler.Cluster.Disconnect()
 }
 
+// nodeForKey returns a node that can handle the given model
 func (handler *TaskHandler) nodeForKey(modelName string, version string) (ServingService, error) {
 	var modelKey = modelName + "##" + version
 	nodes, err := handler.Cluster.FindNodeForKey(modelKey)
@@ -53,26 +62,28 @@ func (handler *TaskHandler) nodeForKey(modelName string, version string) (Servin
 	return nodes[rand.Intn(len(nodes))], nil
 }
 
+// restDirector is the director of REST requests.
 func (handler *TaskHandler) restDirector(req *http.Request, modelName string, version string) {
 	selectedNode, err := handler.nodeForKey(modelName, version)
 	if err != nil {
 		log.WithError(err).Error("Error finding node")
 		return
 	}
-	selectedUrl, err := url.Parse(fmt.Sprintf("http://%s:%d", selectedNode.Host, selectedNode.RestPort))
+	selectedURL, err := url.Parse(fmt.Sprintf("http://%s:%d", selectedNode.Host, selectedNode.RestPort))
 	if err != nil {
 		log.WithError(err).Error("Error parsing proxy url")
 		return
 	}
-	selectedUrl.Path = req.URL.Path
-	log.Infof("Forwarding to cache: %s", selectedUrl.String())
-	req.URL = selectedUrl
+	selectedURL.Path = req.URL.Path
+	log.Infof("Forwarding to cache: %s", selectedURL.String())
+	req.URL = selectedURL
 	if _, ok := req.Header["User-Agent"]; !ok {
 		// explicitly disable User-Agent so it's not set to default value
 		req.Header.Set("User-Agent", "")
 	}
 }
 
+// grpcDirector is the director of GRPC requests.
 func (handler *TaskHandler) grpcDirector(modelName string, version string) (*grpc.ClientConn, error) {
 	selectedNode, err := handler.nodeForKey(modelName, version)
 	if err != nil {

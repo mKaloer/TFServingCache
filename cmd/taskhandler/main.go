@@ -27,7 +27,7 @@ func main() {
 	go cache.GrpcProxy.Listen(viper.GetInt("cacheGrpcPort"))
 	defer cache.GrpcProxy.Close()
 
-	tHandler := taskhandler.New(dService)
+	tHandler := taskhandler.NewTaskHandler(dService)
 	err := tHandler.ConnectToCluster()
 	if err != nil {
 		log.WithError(err).Fatal("Could not connect to cluster")
