@@ -2,15 +2,17 @@ package consul
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 type ConsulDiscoveryService struct {
-	ListUpdatedChans map[string]chan []string
+	ListUpdatedChans map[string]chan []taskhandler.ServingService
 	ServiceName      string
 	ServiceID        string
 	ConsulClient     *api.Client
@@ -33,7 +35,7 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*ConsulDiscoveryServ
 	}
 
 	c := &ConsulDiscoveryService{
-		ListUpdatedChans: make(map[string]chan []string, 0),
+		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
 		ConsulClient:     client,
 		ttl:              ttl,
 		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
@@ -51,7 +53,7 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 		ID:   consul.ServiceID,
 		Tags: []string{
 			fmt.Sprintf("rest:%d", viper.GetInt("cacheRestPort")),
-			fmt.Sprintf("rest:%d", viper.GetInt("cacheRestPort")),
+			fmt.Sprintf("grpc:%d", viper.GetInt("cacheGrpcPort")),
 		},
 		Check: &api.AgentServiceCheck{
 			TTL:                            consul.ttl.String(),
@@ -71,17 +73,25 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 			if err != nil {
 				log.WithError(err).Error("Error getting services")
 			} else {
-				passingNodes := make([]string, 0, len(res))
+				passingNodes := make([]taskhandler.ServingService, 0, len(res))
 				for k := range res {
 					id := res[k].Service.ID
-					grpcPort := ""
-					restPort := ""
+					grpcPort := 0
+					restPort := 0
 					for t := range res[k].Service.Tags {
 						switch res[k].Service.Tags[t][0:4] {
 						case "grpc":
-							grpcPort = res[k].Service.Tags[t][5:]
+							portStr := res[k].Service.Tags[t][5:]
+							grpcPort, err = strconv.Atoi(portStr)
+							if err != nil {
+								log.WithError(err).Errorf("Invalid grpc port: %s", portStr)
+							}
 						case "rest":
-							restPort = res[k].Service.Tags[t][5:]
+							portStr := res[k].Service.Tags[t][5:]
+							restPort, err = strconv.Atoi(res[k].Service.Tags[t][5:])
+							if err != nil {
+								log.WithError(err).Errorf("Invalid rest port: %s", portStr)
+							}
 						}
 					}
 
@@ -91,7 +101,11 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 						addr = res[k].Node.Address
 					}
 					log.Debugf("Found node: %s: %s:%s:%s", id, addr, restPort, grpcPort)
-					passingNodes = append(passingNodes, fmt.Sprintf("%s:%s:%s", addr, restPort, grpcPort))
+					passingNodes = append(passingNodes, taskhandler.ServingService{
+						Host:     addr,
+						RestPort: restPort,
+						GrpcPort: grpcPort,
+					})
 				}
 				for ch := range consul.ListUpdatedChans {
 					consul.ListUpdatedChans[ch] <- passingNodes
@@ -113,7 +127,7 @@ func (consul *ConsulDiscoveryService) UnregisterService() error {
 	return err
 }
 
-func (consul *ConsulDiscoveryService) AddNodeListUpdated(key string, sub chan []string) {
+func (consul *ConsulDiscoveryService) AddNodeListUpdated(key string, sub chan []taskhandler.ServingService) {
 	consul.ListUpdatedChans[key] = sub
 }
 

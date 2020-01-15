@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.etcd.io/etcd/clientv3"
 )
 
 type EtcdDiscoveryService struct {
-	ListUpdatedChans map[string]chan []string
+	ListUpdatedChans map[string]chan []taskhandler.ServingService
 	ServiceName      string
 	ServiceId        string
 	EtcdClient       *clientv3.Client
@@ -38,7 +41,7 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryServic
 	ttl := viper.GetDuration("serviceDiscovery.heartbeatTTL") * time.Second
 	ip := getOutboundIP().String()
 	service := &EtcdDiscoveryService{
-		ListUpdatedChans: make(map[string]chan []string, 0),
+		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
 		EtcdClient:       c,
 		ttl:              ttl,
 		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
@@ -82,9 +85,22 @@ func (service *EtcdDiscoveryService) RegisterService() error {
 					}
 				}
 				if isUpdated {
-					memberList := make([]string, 0, len(nodeMap))
+					memberList := make([]taskhandler.ServingService, 0, len(nodeMap))
 					for k := range nodeMap {
-						memberList = append(memberList, nodeMap[k])
+						serviceParts := strings.Split(nodeMap[k], ":")
+						restPort, err := strconv.Atoi(serviceParts[1])
+						if err != nil {
+							log.WithError(err).Errorf("Invalid rest port: %s", serviceParts[1])
+						}
+						grpcPort, err := strconv.Atoi(serviceParts[2])
+						if err != nil {
+							log.WithError(err).Errorf("Invalid grpc port: %s", serviceParts[2])
+						}
+						memberList = append(memberList, taskhandler.ServingService{
+							Host:     serviceParts[0],
+							RestPort: restPort,
+							GrpcPort: grpcPort,
+						})
 						log.Debugf("Found node: %s: %s", k, nodeMap[k])
 					}
 					for ch := range service.ListUpdatedChans {
@@ -107,7 +123,7 @@ func (service *EtcdDiscoveryService) UnregisterService() error {
 	return err
 }
 
-func (service *EtcdDiscoveryService) AddNodeListUpdated(key string, sub chan []string) {
+func (service *EtcdDiscoveryService) AddNodeListUpdated(key string, sub chan []taskhandler.ServingService) {
 	service.ListUpdatedChans[key] = sub
 }
 

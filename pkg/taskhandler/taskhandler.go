@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
@@ -44,11 +43,11 @@ func (handler *TaskHandler) DisconnectFromCluster() error {
 	return handler.Cluster.Disconnect()
 }
 
-func (handler *TaskHandler) nodeForKey(modelName string, version string) (string, error) {
+func (handler *TaskHandler) nodeForKey(modelName string, version string) (ServingService, error) {
 	var modelKey = modelName + "##" + version
 	nodes, err := handler.Cluster.FindNodeForKey(modelKey)
 	if err != nil {
-		return "", err
+		return ServingService{}, err
 	}
 	// Pick random node
 	return nodes[rand.Intn(len(nodes))], nil
@@ -60,9 +59,7 @@ func (handler *TaskHandler) restDirector(req *http.Request, modelName string, ve
 		log.WithError(err).Error("Error finding node")
 		return
 	}
-	nodeParts := strings.Split(selectedNode, ":")
-	// Rest host is idx 0, port is idx 1 after split
-	selectedUrl, err := url.Parse(fmt.Sprintf("http://%s:%s", nodeParts[0], nodeParts[1]))
+	selectedUrl, err := url.Parse(fmt.Sprintf("http://%s:%d", selectedNode.Host, selectedNode.RestPort))
 	if err != nil {
 		log.WithError(err).Error("Error parsing proxy url")
 		return
@@ -82,8 +79,8 @@ func (handler *TaskHandler) grpcDirector(modelName string, version string) (*grp
 		log.WithError(err).Error("Error finding node")
 		return nil, err
 	}
-	nodeParts := strings.Split(selectedNode, ":")
 	// grpc host is idx 0, port is idx 2 after split
-	grpcHost := fmt.Sprintf("%s:%s", nodeParts[0], nodeParts[2])
+	grpcHost := fmt.Sprintf("%s:%d", selectedNode.Host, selectedNode.GrpcPort)
+	log.Infof("Forwarding to cache: %s", grpcHost)
 	return grpc.Dial(grpcHost, grpc.WithInsecure())
 }
