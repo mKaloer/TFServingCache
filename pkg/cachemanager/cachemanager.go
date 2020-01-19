@@ -33,11 +33,12 @@ type CacheManager struct {
 	GrpcProxy                    *tfservingproxy.GrpcProxy
 	localRestURL                 url.URL
 	localGrpcURL                 string
+	localGrpcConnection          *grpc.ClientConn
 	ModelProvider                ModelProvider
 	LocalCache                   ModelCache
 	MaxConcurrentModels          int
 	TFServingServerModelBasePath string
-	ServingController            TFServingController
+	ServingController            *TFServingController
 	ModelFetchTimeout            float32 // model fetch timeout in seconds
 	rwMux                        sync.RWMutex
 }
@@ -131,7 +132,10 @@ func New(
 		return nil
 	}
 
-	servingController := TFServingController{grpcHost: tfservingServerGRPCHost, restHost: tfservingServerRESTHost}
+	servingController, err := NewTFServingController(tfservingServerGRPCHost, tfservingServerRESTHost)
+	if err != nil {
+		return nil
+	}
 
 	h := &CacheManager{
 		localRestURL:                 *restUrl,
@@ -145,6 +149,19 @@ func New(
 	}
 	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
 	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
+
+	// Create new grpc client
+	localConn, err := grpc.Dial(h.localGrpcURL,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(viper.GetDuration("proxy.grpcTimeout")*time.Second),
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+
+	if err != nil {
+		log.WithError(err).Error("Could not create grpc connection to tfserving")
+		return nil
+	}
+	h.localGrpcConnection = localConn
+
 	return h
 }
 
@@ -176,11 +193,7 @@ func (cache *CacheManager) grpcDirector(modelName string, version string) (*grpc
 		log.WithError(err).Errorf("Error handling request")
 		return nil, err
 	}
-	// Return new grpc client
-	return grpc.Dial(cache.localGrpcURL,
-		grpc.WithInsecure(),
-		grpc.WithTimeout(viper.GetDuration("proxy.grpcTimeout")*time.Second),
-		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+	return cache.localGrpcConnection, nil
 }
 
 func (cache *CacheManager) handleModelRequest(modelName string, version string) error {
@@ -198,4 +211,17 @@ func (cache *CacheManager) handleModelRequest(modelName string, version string) 
 		return err
 	}
 	return nil
+}
+
+func (cache *CacheManager) Close() error {
+	err1 := cache.ServingController.Close()
+	if err1 != nil {
+		log.WithError(err1).Error("Could not close TF serving controller")
+	}
+	err2 := cache.localGrpcConnection.Close()
+	if err2 != nil {
+		log.WithError(err2).Error("Could not close local TF serving connection")
+		return err2
+	}
+	return err1
 }

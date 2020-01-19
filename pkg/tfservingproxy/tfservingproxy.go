@@ -99,7 +99,9 @@ func (proxy *GrpcProxy) Listen(port int) error {
 
 // Close stops the grpc proxy ser
 func (proxy *GrpcProxy) Close() error {
-	return proxy.listener.Close()
+	err := proxy.listener.Close()
+	proxy.GrpcProxy.GracefulStop()
+	return err
 }
 
 // proxyServiceServer implements the relevant TF serving grpc methods

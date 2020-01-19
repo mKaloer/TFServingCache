@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
@@ -17,9 +18,15 @@ import (
 // TaskHandler handles TFServing jobs. A TaskHandler is
 // usually associated with one TFServing server, e.g. as a sidecar.
 type TaskHandler struct {
-	Cluster   *ClusterConnection
-	RestProxy *tfservingproxy.RestProxy
-	GrpcProxy *tfservingproxy.GrpcProxy
+	Cluster         *ClusterConnection
+	RestProxy       *tfservingproxy.RestProxy
+	GrpcProxy       *tfservingproxy.GrpcProxy
+	grpcConnections *grpcConnMap
+}
+
+type grpcConnMap struct {
+	ConnMap map[string]*grpc.ClientConn
+	mutex   sync.RWMutex
 }
 
 // ServeRest returns a function for HTTP serving
@@ -37,8 +44,22 @@ func NewTaskHandler(dService DiscoveryService) *TaskHandler {
 
 	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
 	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
-
+	h.grpcConnections = &grpcConnMap{ConnMap: make(map[string]*grpc.ClientConn)}
 	return h
+}
+
+func (handler *TaskHandler) Close() error {
+	err := handler.DisconnectFromCluster()
+	if err != nil {
+		log.WithError(err).Error("Could not disconnect from cluster")
+	}
+	err = handler.GrpcProxy.Close()
+	if err != nil {
+		log.WithError(err).Error("Could not close grpc proxy")
+	}
+	err = handler.grpcConnections.Close()
+
+	return err
 }
 
 // ConnectToCluster makes this TaskHandler discoverable
@@ -95,8 +116,34 @@ func (handler *TaskHandler) grpcDirector(modelName string, version string) (*grp
 	// grpc host is idx 0, port is idx 2 after split
 	grpcHost := fmt.Sprintf("%s:%d", selectedNode.Host, selectedNode.GrpcPort)
 	log.Infof("Forwarding to cache: %s", grpcHost)
-	return grpc.Dial(grpcHost,
+	// Check if connection exists - otherwise create new connection
+	handler.grpcConnections.mutex.RLock()
+	if conn, ok := handler.grpcConnections.ConnMap[grpcHost]; ok {
+		handler.grpcConnections.mutex.RUnlock()
+		return conn, nil
+	}
+	// No connection exists - swap to write lock and connect
+	handler.grpcConnections.mutex.RUnlock()
+	handler.grpcConnections.mutex.Lock()
+	defer handler.grpcConnections.mutex.Unlock()
+	conn, err := grpc.Dial(grpcHost,
 		grpc.WithInsecure(),
 		grpc.WithTimeout(viper.GetDuration("serving.grpcPredictTimeout")*time.Second),
 		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+	if err == nil {
+		handler.grpcConnections.ConnMap[grpcHost] = conn
+	}
+	return conn, err
+
+}
+
+func (connMap *grpcConnMap) Close() error {
+	var err error = nil
+	for k := range connMap.ConnMap {
+		err = connMap.ConnMap[k].Close()
+		if err != nil {
+			log.WithError(err).Errorf("Could not close grpc connection: %s", k)
+		}
+	}
+	return err
 }
