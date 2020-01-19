@@ -9,7 +9,9 @@ import (
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 )
 
 // TaskHandler handles TFServing jobs. A TaskHandler is
@@ -93,5 +95,8 @@ func (handler *TaskHandler) grpcDirector(modelName string, version string) (*grp
 	// grpc host is idx 0, port is idx 2 after split
 	grpcHost := fmt.Sprintf("%s:%d", selectedNode.Host, selectedNode.GrpcPort)
 	log.Infof("Forwarding to cache: %s", grpcHost)
-	return grpc.Dial(grpcHost, grpc.WithInsecure())
+	return grpc.Dial(grpcHost,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(viper.GetDuration("serving.grpcPredictTimeout")*time.Second),
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
 }

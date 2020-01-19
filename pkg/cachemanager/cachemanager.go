@@ -12,7 +12,9 @@ import (
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 )
 
 type Model struct {
@@ -175,7 +177,10 @@ func (cache *CacheManager) grpcDirector(modelName string, version string) (*grpc
 		return nil, err
 	}
 	// Return new grpc client
-	return grpc.Dial(cache.localGrpcURL, grpc.WithInsecure())
+	return grpc.Dial(cache.localGrpcURL,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(viper.GetDuration("proxy.grpcTimeout")*time.Second),
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
 }
 
 func (cache *CacheManager) handleModelRequest(modelName string, version string) error {

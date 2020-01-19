@@ -16,9 +16,12 @@ serving:
   grpcHost: "localhost:8500"
   restHost: "http://localhost:8501"
   maxConcurrentModels: 2
+  grpcConfigTimeout: 10 # timeout in seconds
+  grpcPredictTimeout: 60
 
 proxy:
   replicasPerModel: 3
+  grpcTimeout: 10
 
 serviceDiscovery:
   #### CONSUL ####

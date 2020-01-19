@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"path"
+	"time"
+
 	serving "github.com/mKaloer/TFServingCache/proto/tensorflow/serving"
+	"github.com/spf13/viper"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
 	log "github.com/sirupsen/logrus"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 )
 
 type TFServingController struct {
@@ -49,7 +53,7 @@ const (
 
 func (server *TFServingController) ReloadConfig(models []*Model, tfServingServerModelDir string) error {
 	configs := createModelConfig(models, tfServingServerModelDir)
-	
+
 	request := &serving.ReloadConfigRequest{
 		Config: &serving.ModelServerConfig{
 			Config: &serving.ModelServerConfig_ModelConfigList{
@@ -60,7 +64,7 @@ func (server *TFServingController) ReloadConfig(models []*Model, tfServingServer
 		},
 	}
 
-	conn, err := grpc.Dial(server.grpcHost, grpc.WithInsecure())
+	conn, err := server.openGrpcConn()
 	if err != nil {
 		log.WithError(err).Error("Cannot connect to the grpc server")
 		return err
@@ -82,7 +86,7 @@ func (server *TFServingController) ReloadConfig(models []*Model, tfServingServer
 }
 
 func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStatus_State, error) {
-	conn, err := grpc.Dial(server.grpcHost, grpc.WithInsecure())
+	conn, err := server.openGrpcConn()
 	if err != nil {
 		log.WithError(err).Error("Cannot connect to the grpc server")
 		return 0, err
@@ -101,9 +105,9 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 	if err != nil {
 		log.WithError(err).Error("Error getting tf serving model status")
 		return 0, err
-	} else {
-		log.Debug("TF model status received successfully")
 	}
+
+	log.Debug("TF model status received successfully")
 
 	if len(resp.ModelVersionStatus) > 0 {
 		return modelVersionStatusStateFromTFState(resp.ModelVersionStatus[0].State), nil
@@ -112,7 +116,7 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 }
 
 func (server *TFServingController) GetModelStates() ([]ModelVersionStatus_State, error) {
-	conn, err := grpc.Dial(server.grpcHost, grpc.WithInsecure())
+	conn, err := server.openGrpcConn()
 	if err != nil {
 		log.WithError(err).Error("Cannot connect to the grpc server")
 		return nil, err
@@ -138,7 +142,7 @@ func (server *TFServingController) GetModelStates() ([]ModelVersionStatus_State,
 }
 
 func createModelConfig(models []*Model, tfServingServerModelDir string) []*serving.ModelConfig {
-	
+
 	distinctModels := map[string]*serving.FileSystemStoragePathSourceConfig_ServableVersionPolicy_Specific{}
 	// Number of configs will be at most len(models) large (also the expected val)
 	var configs = make([]*serving.ModelConfig, 0, len(models))
@@ -166,6 +170,13 @@ func createModelConfig(models []*Model, tfServingServerModelDir string) []*servi
 		}
 	}
 	return configs
+}
+
+func (server *TFServingController) openGrpcConn() (*grpc.ClientConn, error) {
+	return grpc.Dial(server.grpcHost,
+		grpc.WithInsecure(),
+		grpc.WithTimeout(viper.GetDuration("serving.grpcConfigTimeout")*time.Second),
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
 }
 
 func modelVersionStatusStateFromTFState(state serving.ModelVersionStatus_State) ModelVersionStatus_State {

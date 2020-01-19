@@ -46,6 +46,7 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 
 	return h
 }
+
 // NewGrpcProxy creates a new GrpcProxy for TF Serving
 func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.ClientConn, error)) *GrpcProxy {
 	server := proxyServiceServer{
@@ -100,7 +101,6 @@ func (proxy *GrpcProxy) Listen(port int) error {
 func (proxy *GrpcProxy) Close() error {
 	return proxy.listener.Close()
 }
-
 
 // proxyServiceServer implements the relevant TF serving grpc methods
 // and extracts model name and version and forwards the requests to a handler node
