@@ -64,8 +64,8 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			log.WithError(err).Error("Error while retrieving model")
 			return err
 		}
-		cache.LocalCache.Put(identifier, model)
-		cache.reloadServingConfig(model)
+		cache.LocalCache.Put(identifier, *model)
+		cache.reloadServingConfig(*model)
 	} else if state, err := cache.ServingController.GetModelStatus(model); err != nil ||
 		state == ModelVersionStatus_UNLOADING ||
 		state == ModelVersionStatus_END {

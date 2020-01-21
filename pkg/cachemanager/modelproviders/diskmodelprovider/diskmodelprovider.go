@@ -17,26 +17,26 @@ type DiskModelProvider struct {
 	BaseDir string
 }
 
-func (provider DiskModelProvider) LoadModel(modelName string, modelVersion int64, destinationDir string) (cachemanager.Model, error) {
+func (provider DiskModelProvider) LoadModel(modelName string, modelVersion int64, destinationDir string) (*cachemanager.Model, error) {
 	log.Infof("Copying model %s:%d", modelName, modelVersion)
 	srcPath, err := findSrcPathForModel(path.Join(provider.BaseDir, modelName), modelVersion)
 	if err != nil {
 		log.WithError(err).Errorf("Could not load model %s:%d", modelName, modelVersion)
-		return cachemanager.Model{}, err
+		return nil, err
 	}
 	destPath := path.Join(destinationDir, modelName, strconv.FormatInt(modelVersion, 10))
 	err = copy.Copy(srcPath, destPath)
 	if err != nil {
 		log.WithError(err).Errorf("Could not load model %s:%d", modelName, modelVersion)
-		return cachemanager.Model{}, err
+		return nil, err
 	}
 	modelSize, err := provider.ModelSize(modelName, modelVersion)
 	if err != nil {
 		log.WithError(err).Errorf("Could not load model size %s:%d", modelName, modelVersion)
-		return cachemanager.Model{}, err
+		return nil, err
 	}
 
-	return cachemanager.Model{
+	return &cachemanager.Model{
 		Identifier: cachemanager.ModelIdentifier{ModelName: modelName, Version: modelVersion},
 		Path:       path.Join(modelName, strconv.FormatInt(modelVersion, 10)),
 		SizeOnDisk: modelSize,

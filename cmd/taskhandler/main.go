@@ -5,7 +5,8 @@ import (
 	"net/http"
 
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
-	"github.com/mKaloer/TFServingCache/pkg/cachemanager/diskmodelprovider"
+	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/diskmodelprovider"
+	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/s3modelprovider"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/consul"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/etcd"
@@ -43,12 +44,7 @@ func main() {
 }
 
 func CreateCacheManager() *cachemanager.CacheManager {
-	if viper.GetString("modelProvider.type") != "diskProvider" {
-		log.Fatalf("Unsupported modelProvider: %s", viper.GetString("modelProvider.type"))
-	}
-	provider := diskmodelprovider.DiskModelProvider{
-		BaseDir: viper.GetString("modelProvider.baseDir"),
-	}
+	provider := CreateModelProvider()
 	modelCache := cachemanager.NewLRUCache(viper.GetString("modelCache.hostModelPath"), viper.GetInt64("modelCache.size"))
 	c := cachemanager.New(provider, &modelCache,
 		viper.GetString("serving.servingModelPath"),
@@ -76,6 +72,29 @@ func CreateDiscoveryService() taskhandler.DiscoveryService {
 		log.WithError(err).Fatal("Could not create discovery service")
 	}
 	return dService
+}
+
+func CreateModelProvider() cachemanager.ModelProvider {
+	var mProvider cachemanager.ModelProvider = nil
+	var err error = nil
+
+	switch viper.GetString("modelProvider.type") {
+	case "diskProvider":
+		mProvider = diskmodelprovider.DiskModelProvider{
+			BaseDir: viper.GetString("modelProvider.baseDir"),
+		}
+	case "s3Provider":
+		mProvider, err = s3modelprovider.NewS3ModelProvider(
+			viper.GetString("modelProvider.s3.bucket"),
+			viper.GetString("modelProvider.s3.basePath"))
+	default:
+		log.Fatalf("Unsupported discoveryService: %s", viper.GetString("serviceDiscovery.type"))
+	}
+
+	if err != nil {
+		log.WithError(err).Fatal("Could not create discovery service")
+	}
+	return mProvider
 }
 
 func healthCheck() (bool, error) {

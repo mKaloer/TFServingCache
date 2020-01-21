@@ -3,9 +3,14 @@ proxyGrpcPort: 8100
 cacheRestPort: 8094
 cacheGrpcPort: 8095
 
+#modelProvider:
+#  type: diskProvider
+#  baseDir: "./model_repo"
 modelProvider:
-  type: diskProvider
-  baseDir: "./model_repo"
+  type: s3Provider
+  s3:
+    bucket: foo
+    basePath: models/foo/bar
 
 modelCache:
   hostModelPath: "./models"
