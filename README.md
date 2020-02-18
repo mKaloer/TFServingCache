@@ -29,4 +29,4 @@ In order to identify which TF Serving service that should provide a model, TF Se
 
 ## References
 
-<a name="credits">1</a>: This Just-In-Time model loading is inspired by ideas by https://github.com/mpdn.
+<a name="credits">1</a>: This Just-In-Time model loading is inspired by ideas by [@mpdn](https://github.com/mpdn)
