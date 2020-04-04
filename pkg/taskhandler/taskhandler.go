@@ -86,16 +86,16 @@ func (handler *TaskHandler) nodeForKey(modelName string, version string) (Servin
 }
 
 // restDirector is the director of REST requests.
-func (handler *TaskHandler) restDirector(req *http.Request, modelName string, version string) {
+func (handler *TaskHandler) restDirector(req *http.Request, modelName string, version string) error {
 	selectedNode, err := handler.nodeForKey(modelName, version)
 	if err != nil {
-		log.WithError(err).Error("Error finding node")
-		return
+		log.WithError(err).Error("Error finding node for model")
+		return fmt.Errorf("Error finding node for model: %w", err)
 	}
 	selectedURL, err := url.Parse(fmt.Sprintf("http://%s:%d", selectedNode.Host, selectedNode.RestPort))
 	if err != nil {
 		log.WithError(err).Error("Error parsing proxy url")
-		return
+		return fmt.Errorf("Error parsing proxy url: %w", err)
 	}
 	selectedURL.Path = req.URL.Path
 	log.Infof("Forwarding to cache: %s", selectedURL.String())
@@ -104,6 +104,7 @@ func (handler *TaskHandler) restDirector(req *http.Request, modelName string, ve
 		// explicitly disable User-Agent so it's not set to default value
 		req.Header.Set("User-Agent", "")
 	}
+	return nil
 }
 
 // grpcDirector is the director of GRPC requests.

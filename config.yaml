@@ -3,14 +3,17 @@ proxyGrpcPort: 8100
 cacheRestPort: 8094
 cacheGrpcPort: 8095
 
-#modelProvider:
-#  type: diskProvider
-#  baseDir: "./model_repo"
+metrics:
+  metricsPath: "/monitoring/prometheus/metrics"
+
 modelProvider:
-  type: s3Provider
-  s3:
-    bucket: foo
-    basePath: models/foo/bar
+  type: diskProvider
+  baseDir: "./model_repo"
+#modelProvider:
+#  type: s3Provider
+#  s3:
+#    bucket: foo
+#    basePath: models/foo/bar
 
 modelCache:
   hostModelPath: "./models"
@@ -23,12 +26,14 @@ serving:
   maxConcurrentModels: 2
   grpcConfigTimeout: 10 # timeout in seconds
   grpcPredictTimeout: 60
+  metricsPath: "/monitoring/prometheus/metrics"
 
 proxy:
   replicasPerModel: 3
   grpcTimeout: 10
 
 serviceDiscovery:
+  allowLocalhost: true
   #### CONSUL ####
   #type: consul
   #serviceName: tfservingcache

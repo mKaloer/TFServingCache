@@ -152,7 +152,11 @@ func (service *EtcdDiscoveryService) updateTTL(check func() (bool, error)) {
 func getOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		log.Fatal(err)
+		if viper.GetBool("serviceDiscovery.allowLocalhost") {
+			return net.ParseIP("127.0.0.1")
+		} else {
+			log.Fatal("Could not get unboind ip: %v", err)
+		}
 	}
 	defer conn.Close()
 

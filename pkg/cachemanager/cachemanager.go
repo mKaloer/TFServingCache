@@ -2,6 +2,7 @@ package cachemanager
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -170,12 +171,12 @@ func fileOrDirExists(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (cache *CacheManager) restDirector(req *http.Request, modelName string, version string) {
+func (cache *CacheManager) restDirector(req *http.Request, modelName string, version string) error {
 	err := cache.handleModelRequest(modelName, version)
 	if err != nil {
 		log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
 		req.Response.StatusCode = 500
-		return
+		return fmt.Errorf("Error handling request. Aborting: %s, %w", req.URL.String(), err)
 	}
 	localURL := cache.localRestURL
 	localURL.Path = req.URL.Path
@@ -185,6 +186,7 @@ func (cache *CacheManager) restDirector(req *http.Request, modelName string, ver
 		// explicitly disable User-Agent so it's not set to default value
 		req.Header.Set("User-Agent", "")
 	}
+	return nil
 }
 
 func (cache *CacheManager) grpcDirector(modelName string, version string) (*grpc.ClientConn, error) {
