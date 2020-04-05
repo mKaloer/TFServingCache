@@ -19,12 +19,12 @@ import (
 )
 
 var tfServingRestURLMatch = regexp.MustCompile(`(?i)^/v1/models/(?P<modelName>[a-z0-9]+)(/versions/(?P<version>[0-9]+))?`)
-var requestsForwarded = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "tfservingcache_proxy_forwards_total",
-	Help: "The total number of forwarded requests",
+var promRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "tfservingcache_proxy_requests_total",
+	Help: "The total number of requests",
 }, []string{"protocol"})
-var requestsInvalid = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "tfservingcache_proxy_invalid_total",
+var promRequestsFailed = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "tfservingcache_proxy_failures_total",
 	Help: "The total number of failed requests",
 }, []string{"protocol"})
 
@@ -46,8 +46,8 @@ type GrpcProxy struct {
 
 // NewRestProxy creates a new RestProxy for TF Serving
 func NewRestProxy(handler func(req *http.Request, modelName string, version string) error) *RestProxy {
-	requestsForwarded.WithLabelValues("rest").Add(0)
-	requestsInvalid.WithLabelValues("rest").Add(0)
+	promRequestsTotal.WithLabelValues("rest")
+	promRequestsFailed.WithLabelValues("rest")
 
 	director := func(req *http.Request) {
 		log.Debugf("Handling URL: %s", req.URL.String())
@@ -55,9 +55,9 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
 		err := handler(req, matches[1], matches[3])
 		if err != nil {
-			requestsInvalid.WithLabelValues("rest").Inc()
+			promRequestsFailed.WithLabelValues("rest").Inc()
 		} else {
-			requestsInvalid.WithLabelValues("rest").Inc()
+			promRequestsFailed.WithLabelValues("rest").Inc()
 		}
 	}
 	h := &RestProxy{
@@ -69,8 +69,8 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 
 // NewGrpcProxy creates a new GrpcProxy for TF Serving
 func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.ClientConn, error)) *GrpcProxy {
-	requestsForwarded.WithLabelValues("grpc").Add(0)
-	requestsInvalid.WithLabelValues("grpc").Add(0)
+	promRequestsTotal.WithLabelValues("grpc")
+	promRequestsFailed.WithLabelValues("grpc")
 
 	server := proxyServiceServer{
 		clientProvider: clientProvider,
@@ -86,6 +86,7 @@ func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.C
 func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
 	// Wrap proxy in custom function to check for invalid requests
 	proxyFun := func(rw http.ResponseWriter, req *http.Request) {
+		promRequestsTotal.WithLabelValues("rest").Inc()
 		log.Debugf("Handling URL: %s", req.URL.String())
 		matches := tfServingRestURLMatch.FindStringSubmatch(req.URL.String())
 		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
@@ -99,10 +100,9 @@ func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
 				Status:  "Error",
 				Message: "Model version must be provided",
 			})
-			requestsInvalid.WithLabelValues("rest").Inc()
+			promRequestsFailed.WithLabelValues("rest").Inc()
 			return
 		}
-		requestsForwarded.WithLabelValues("rest").Inc()
 		handler.RestProxy.ServeHTTP(rw, req)
 	}
 	return proxyFun
@@ -137,43 +137,43 @@ type proxyServiceServer struct {
 
 // Classify.
 func (server *proxyServiceServer) Classify(ctx context.Context, req *pb.ClassificationRequest) (*pb.ClassificationResponse, error) {
+	promRequestsTotal.WithLabelValues("grpc").Inc()
 	client, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
-		requestsInvalid.WithLabelValues("grpc").Inc()
+		promRequestsFailed.WithLabelValues("grpc").Inc()
 		log.WithError(err).Error("Could not get grpc client")
 		return nil, err
 	}
 	service := pb.NewPredictionServiceClient(client)
 	res, err := service.Classify(ctx, req)
-	requestsForwarded.WithLabelValues("grpc").Inc()
 	return res, err
 }
 
 // Regress.
 func (server *proxyServiceServer) Regress(ctx context.Context, req *pb.RegressionRequest) (*pb.RegressionResponse, error) {
+	promRequestsTotal.WithLabelValues("grpc").Inc()
 	client, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
-		requestsInvalid.WithLabelValues("grpc").Inc()
+		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
 	service := pb.NewPredictionServiceClient(client)
 	res, err := service.Regress(ctx, req)
-	requestsForwarded.WithLabelValues("grpc").Inc()
 	return res, err
 }
 
 // Predict -- provides access to loaded TensorFlow model.
 func (server *proxyServiceServer) Predict(ctx context.Context, req *pb.PredictRequest) (*pb.PredictResponse, error) {
+	promRequestsTotal.WithLabelValues("grpc").Inc()
 	client, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
-		requestsInvalid.WithLabelValues("grpc").Inc()
+		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
 	service := pb.NewPredictionServiceClient(client)
 	res, err := service.Predict(ctx, req)
-	requestsForwarded.WithLabelValues("grpc").Inc()
 	return res, err
 }
 
@@ -184,28 +184,28 @@ func (server *proxyServiceServer) MultiInference(ctx context.Context, req *pb.Mu
 
 // GetModelMetadata - provides access to metadata for loaded models.
 func (server *proxyServiceServer) GetModelMetadata(ctx context.Context, req *pb.GetModelMetadataRequest) (*pb.GetModelMetadataResponse, error) {
+	promRequestsTotal.WithLabelValues("grpc").Inc()
 	client, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
-		requestsInvalid.WithLabelValues("grpc").Inc()
+		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
 	service := pb.NewPredictionServiceClient(client)
 	res, err := service.GetModelMetadata(ctx, req)
-	requestsForwarded.WithLabelValues("grpc").Inc()
 	return res, err
 }
 
 func (server *proxyServiceServer) SessionRun(ctx context.Context, req *pb.SessionRunRequest) (*pb.SessionRunResponse, error) {
+	promRequestsTotal.WithLabelValues("grpc").Inc()
 	client, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
-		requestsInvalid.WithLabelValues("grpc").Inc()
+		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
 	service := pb.NewSessionServiceClient(client)
 	res, err := service.SessionRun(ctx, req)
-	requestsForwarded.WithLabelValues("grpc").Inc()
 	return res, err
 }
 

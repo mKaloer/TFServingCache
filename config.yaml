@@ -5,6 +5,8 @@ cacheGrpcPort: 8095
 
 metrics:
   metricsPath: "/monitoring/prometheus/metrics"
+  # Whether to add model name and version as prometheus labels
+  modelLabels: false
 
 modelProvider:
   type: diskProvider

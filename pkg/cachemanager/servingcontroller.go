@@ -97,10 +97,9 @@ func (server *TFServingController) ReloadConfig(models []*Model, tfServingServer
 	if err != nil {
 		log.WithError(err).Error("Error updating tf config")
 		return err
-	} else {
-		log.Debug("TF config updated successfully")
 	}
 
+	log.Debug("TF config updated successfully")
 	return nil
 }
 

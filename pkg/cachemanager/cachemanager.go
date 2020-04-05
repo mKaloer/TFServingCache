@@ -12,11 +12,34 @@ import (
 	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/tfservingproxy"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 )
+
+var promCacheTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "tfservingcache_cache_total",
+	Help: "The total number of cache misses and hits",
+}, []string{"model", "version"})
+var promCacheHits = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "tfservingcache_cache_hits_total",
+	Help: "The total number of cache hits",
+}, []string{"model", "version"})
+var promCacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "tfservingcache_cache_misses_total",
+	Help: "The total number of cache misses",
+}, []string{"model", "version"})
+var promCacheDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "tfservingcache_cache_duration_seconds",
+	Help: "The duration of cache requests, including hits and misses",
+}, []string{"model", "version"})
+var promCacheFetchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "tfservingcache_cache_fetch_duration_seconds",
+	Help: "The duration of cache fetches (when cache miss)",
+}, []string{"model", "version"})
 
 type Model struct {
 	Identifier ModelIdentifier
@@ -49,8 +72,27 @@ func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request
 }
 
 func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
+	var promTimer *prometheus.Timer
+	if viper.GetBool("metrics.modelLabels") {
+		promCacheTotal.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
+		promTimer = prometheus.NewTimer(
+			promCacheDuration.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)))
+	} else {
+		promCacheTotal.WithLabelValues("all_models", "-1").Inc()
+		promTimer = prometheus.NewTimer(promCacheDuration.WithLabelValues("all_models", "-1"))
+	}
+	defer promTimer.ObserveDuration()
 	model, isPresent := cache.tryGetModelFromCache(identifier)
 	if !isPresent {
+		var promMissTimer *prometheus.Timer
+		if viper.GetBool("metrics.modelLabels") {
+			promCacheMisses.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
+			promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)))
+		} else {
+			promCacheMisses.WithLabelValues("all_models", "-1").Inc()
+			promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues("all_models", "-1"))
+		}
+		defer promMissTimer.ObserveDuration()
 		// Model does not exist - get size, then put in cache
 		cache.rwMux.Lock()
 		defer cache.rwMux.Unlock()
@@ -74,6 +116,12 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 		cache.rwMux.Lock()
 		defer cache.rwMux.Unlock()
 		cache.reloadServingConfig(model)
+	} else {
+		if viper.GetBool("metrics.modelLabels") {
+			promCacheHits.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
+		} else {
+			promCacheHits.WithLabelValues("all_models", "-1").Inc()
+		}
 	}
 	return nil
 }
@@ -162,6 +210,15 @@ func New(
 		return nil
 	}
 	h.localGrpcConnection = localConn
+
+	if !viper.GetBool("metrics.modelLabels") {
+		// initialize prometheus
+		promCacheHits.WithLabelValues("all_models", "-1")
+		promCacheMisses.WithLabelValues("all_models", "-1")
+		promCacheTotal.WithLabelValues("all_models", "-1")
+		promCacheDuration.WithLabelValues("all_models", "-1")
+		promCacheFetchDuration.WithLabelValues("all_models", "-1")
+	}
 
 	return h
 }
