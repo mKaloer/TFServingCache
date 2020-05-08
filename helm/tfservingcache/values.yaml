@@ -1,0 +1,37 @@
+image:
+  repository: tfservingcache
+  tag: stable
+  pullPolicy: IfNotPresent
+
+# Scale according to needs, there is no minumum number of replicas.
+replicaCount: 2
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  grpcPort: 8500
+  httpPort: 8501
+  grpcCachePort: 8600
+  httpCachePort: 8601
+
+ingress:
+  enabled: false
+  annotations: {}
+  hosts:
+    - host: your-host.local
+      paths: []
+  tls: []
+
+tfServing:
+  repository: tensorflow/serving
+  tag: 2.1.0
+  pullPolicy: IfNotPresent
+  resources: {}
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tfservingcache.fullname" . }}
+  labels:
+{{ include "tfservingcache.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tfservingcache.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tfservingcache.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: proxyGrpc
+              containerPort: 8500
+              protocol: TCP
+            - name: proxyHttp
+              containerPort: 8501
+              protocol: TCP
+            - name: cacheGrpc
+              containerPort: 8600
+              protocol: TCP
+            - name: cacheHttp
+              containerPort: 8601
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        - name: {{ .Values.tfServing.name }}
+          image: "{{ .Values.tfServing.repository }}:{{ .Values.tfServing.tag }}"
+          imagePullPolicy: {{ .Values.tfServing.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8501
+              protocol: TCP
+            - name: grpc
+              containerPort: 8500
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 60
+            timeoutSeconds: 300
+          livenessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 60
+            timeoutSeconds: 300
+          resources:
+            {{- toYaml .Values.tfServing.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

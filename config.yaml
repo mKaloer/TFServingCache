@@ -1,7 +1,7 @@
-proxyRestPort: 8093
-proxyGrpcPort: 8100
-cacheRestPort: 8094
-cacheGrpcPort: 8095
+proxyRestPort: 8500
+proxyGrpcPort: 8501
+cacheRestPort: 8600
+cacheGrpcPort: 8601
 
 metrics:
   metricsPath: "/monitoring/prometheus/metrics"

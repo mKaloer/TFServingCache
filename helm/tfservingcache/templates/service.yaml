@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tfservingcache.fullname" . }}
+  labels:
+{{ include "tfservingcache.labels" . | indent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.grpcPort }}
+      targetPort: 8500
+      protocol: TCP
+      name: grpc
+    - port: {{ .Values.service.httpPort }}
+      targetPort: 8501
+      protocol: TCP
+      name: http
+    - port: {{ .Values.service.grpcCachePort }}
+      targetPort: 8600
+      protocol: TCP
+      name: grpc
+    - port: {{ .Values.service.httpCachePort }}
+      targetPort: 8601
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tfservingcache.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
