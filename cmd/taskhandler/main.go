@@ -10,6 +10,7 @@ import (
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/consul"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/etcd"
+	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/kubernetes"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -72,6 +73,8 @@ func CreateDiscoveryService() taskhandler.DiscoveryService {
 		dService, err = consul.NewDiscoveryService(healthCheck)
 	case "etcd":
 		dService, err = etcd.NewDiscoveryService(healthCheck)
+	case "k8s":
+		dService, err = kubernetes.NewDiscoveryService()
 	default:
 		log.Fatalf("Unsupported discoveryService: %s", viper.GetString("serviceDiscovery.type"))
 	}

@@ -29,16 +29,16 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*ConsulDiscoveryServ
 
 	ttl := viper.GetDuration("serviceDiscovery.heartbeatTTL") * time.Second
 
-	serviceId := viper.GetString("serviceDiscovery.serviceId")
+	serviceId := viper.GetString("serviceDiscovery.consul.serviceId")
 	if serviceId == "" {
-		serviceId = viper.GetString("serviceDiscovery.serviceName")
+		serviceId = viper.GetString("serviceDiscovery.consul.serviceName")
 	}
 
 	c := &ConsulDiscoveryService{
 		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
 		ConsulClient:     client,
 		ttl:              ttl,
-		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
+		ServiceName:      viper.GetString("serviceDiscovery.consul.serviceName"),
 		ServiceID:        serviceId,
 		HealthCheckFun:   healthCheck,
 	}

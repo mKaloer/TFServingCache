@@ -15,6 +15,9 @@ require (
 	github.com/tensorflow/tensorflow/tensorflow/go/core v0.0.0-00010101000000-000000000000
 	go.etcd.io/etcd v3.3.18+incompatible
 	google.golang.org/grpc v1.26.0
+	k8s.io/api v0.18.3
+	k8s.io/apimachinery v0.18.3
+	k8s.io/client-go v0.18.3
 	stathat.com/c/consistent v1.0.0
 )
 

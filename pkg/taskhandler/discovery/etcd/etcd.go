@@ -28,10 +28,10 @@ type EtcdDiscoveryService struct {
 
 func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryService, error) {
 	cfg := clientv3.Config{
-		Endpoints:   viper.GetStringSlice("serviceDiscovery.endpoints"),
+		Endpoints:   viper.GetStringSlice("serviceDiscovery.etcd.endpoints"),
 		DialTimeout: 5 * time.Second,
-		Username:    viper.GetString("serviceDiscovery.authorization.username"),
-		Password:    viper.GetString("serviceDiscovery.authorization.password"),
+		Username:    viper.GetString("serviceDiscovery.etcd.authorization.username"),
+		Password:    viper.GetString("serviceDiscovery.etcd.authorization.password"),
 	}
 	c, err := clientv3.New(cfg)
 	if err != nil {
@@ -44,7 +44,7 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*EtcdDiscoveryServic
 		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
 		EtcdClient:       c,
 		ttl:              ttl,
-		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
+		ServiceName:      viper.GetString("serviceDiscovery.etcd.serviceName"),
 		ServiceId:        uuid.New().String(),
 		HealthCheckFun:   healthCheck,
 		outboundIp:       ip,
@@ -152,7 +152,7 @@ func (service *EtcdDiscoveryService) updateTTL(check func() (bool, error)) {
 func getOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		if viper.GetBool("serviceDiscovery.allowLocalhost") {
+		if viper.GetBool("serviceDiscovery.etcd.allowLocalhost") {
 			return net.ParseIP("127.0.0.1")
 		} else {
 			log.Fatal("Could not get unboind ip: %v", err)
