@@ -35,17 +35,27 @@ proxy:
   grpcTimeout: 10
 
 serviceDiscovery:
-  allowLocalhost: true
   #### CONSUL ####
   #type: consul
-  #serviceName: tfservingcache
-  #serviceId: foo1
   #heartbeatTTL: 5
+  #consul:
+  #  serviceName: tfservingcache
+  #  serviceId: foo1
   #### ETCD ####
-  type: etcd
-  serviceName: tfservingcache
-  heartbeatTTL: 5
-  endpoints: ["localhost:2379"]
-  authorization:
-    username: root
-    password: foobar
+  #type: etcd
+  #heartbeatTTL: 5
+  #etcd:
+  #  serviceName: tfservingcache
+  #  endpoints: ["localhost:2379"]
+  #  allowLocalhost: true
+  #  authorization:
+  #    username: root
+  #    password: foobar
+  type: k8s
+  k8s:
+    # field selector for k8s TF serving cache pods
+    fieldSelector:
+      metadata.name: tf-serving-cache
+    portNames:
+      grpcCache: grpccache
+      httpCache: httpcache

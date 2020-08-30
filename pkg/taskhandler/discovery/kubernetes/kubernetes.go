@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/viper"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	k8sWatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -27,8 +28,13 @@ type K8sDiscoveryService struct {
 	ListUpdatedChans map[string]chan []taskhandler.ServingService
 	Namespace        string
 	PodInfo          K8sPodInfo
-	LabelSelector    string
-	K8sClient        *kubernetes.Clientset
+	// Selector that defines the k8s service
+	FieldSelector string
+	K8sClient     *kubernetes.Clientset
+	// Name of gRPC cache port in k8s service
+	grpcCachePortName string
+	// Name of REST cache port in k8s service
+	httpCachePortName string
 }
 
 func NewDiscoveryService() (*K8sDiscoveryService, error) {
@@ -55,13 +61,17 @@ func NewDiscoveryService() (*K8sDiscoveryService, error) {
 		return nil, err
 	}
 
-	labelSelector := viper.GetString("serviceDiscovery.k8s.labelSelector")
+	fieldSelector := viper.GetStringMapString("serviceDiscovery.k8s.fieldSelector")
+	fieldSelectorString := labels.SelectorFromSet(fieldSelector).String()
+
 	service := &K8sDiscoveryService{
-		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
-		K8sClient:        clientset,
-		Namespace:        namespace,
-		PodInfo:          *podInfo,
-		LabelSelector:    labelSelector,
+		ListUpdatedChans:  make(map[string]chan []taskhandler.ServingService, 0),
+		K8sClient:         clientset,
+		Namespace:         namespace,
+		PodInfo:           *podInfo,
+		FieldSelector:     fieldSelectorString,
+		grpcCachePortName: viperTryGetString("serviceDiscovery.k8s.portNames.grpcCache", "grpccache"),
+		httpCachePortName: viperTryGetString("serviceDiscovery.k8s.portNames.httpCache", "httpcache"),
 	}
 
 	return service, nil
@@ -69,71 +79,60 @@ func NewDiscoveryService() (*K8sDiscoveryService, error) {
 
 func (service *K8sDiscoveryService) RegisterService() error {
 	updaterFunc := func() error {
-
 		watch, err := service.K8sClient.CoreV1().Endpoints(service.Namespace).Watch(context.TODO(), metav1.ListOptions{
-			LabelSelector: service.LabelSelector,
+			FieldSelector: service.FieldSelector,
 		})
 		if err != nil {
+			log.WithError(err).Error("Error subscribing to k8s")
 			return err
 		}
-
 		nodeMap := make(map[string]taskhandler.ServingService, 0)
 		for {
 			updates := <-watch.ResultChan()
 			endpoints, ok := updates.Object.(*v1.Endpoints)
+
 			isUpdated := false
 			if !ok {
 				log.Error("Error reading object from K8S")
 				time.Sleep(5 * time.Second)
 			} else {
-				for _, sub := range endpoints.Subsets {
-					if updates.Type == k8sWatch.Added || updates.Type == k8sWatch.Modified {
-						// Add address can be either Rest or gRPC address
-						for addrIdx, addr := range sub.Addresses {
-							service, exists := nodeMap[addr.IP]
-							port := sub.Ports[addrIdx]
-							grpcPort := 0
-							httpPort := 0
-							if port.Name == "grpc" {
-								grpcPort = int(port.Port)
-							}
-							if port.Name == "http" {
-								httpPort = int(port.Port)
+				if updates.Type == k8sWatch.Added || updates.Type == k8sWatch.Modified {
+					for _, sub := range endpoints.Subsets {
+						// Entire list of nodes is sent every time - so keep track of delta
+						nodeMap = make(map[string]taskhandler.ServingService, 0)
+						for _, addr := range sub.Addresses {
+							grpcCachePort := 0
+							httpCachePort := 0
+							for _, port := range sub.Ports {
+								if port.Name == service.grpcCachePortName {
+									grpcCachePort = int(port.Port)
+								} else if port.Name == service.httpCachePortName {
+									httpCachePort = int(port.Port)
+								}
 							}
 
-							if !exists {
-								// Add node
-								nodeMap[addr.Hostname] = taskhandler.ServingService{
-									Host:     addr.IP,
-									GrpcPort: grpcPort,
-									RestPort: httpPort,
-								}
-								isUpdated = true
-							} else {
-								// Update node
-								if grpcPort > 0 && grpcPort != service.GrpcPort {
-									service.GrpcPort = grpcPort
-								}
-								if httpPort > 0 && httpPort != service.RestPort {
-									service.RestPort = httpPort
-								}
-								if addr.IP != service.Host {
-									service.Host = addr.IP
-								}
+							nodeMap[addr.IP] = taskhandler.ServingService{
+								Host:     addr.IP,
+								GrpcPort: grpcCachePort,
+								RestPort: httpCachePort,
 							}
-						}
-					} else if updates.Type == k8sWatch.Deleted {
-						for _, addr := range sub.Addresses {
-							delete(nodeMap, addr.Hostname)
 							isUpdated = true
 						}
 					}
+				} else if updates.Type == k8sWatch.Deleted {
+					// Endpoint deleted - no nodes available
+					nodeMap = make(map[string]taskhandler.ServingService, 0)
+					isUpdated = true
 				}
 				if isUpdated {
 					memberList := make([]taskhandler.ServingService, 0, len(nodeMap))
 					for k := range nodeMap {
 						memberList = append(memberList, nodeMap[k])
-						log.Debugf("Found node: %s: %s", k, nodeMap[k])
+						log.WithFields(log.Fields{
+							"host":     k,
+							"grpcPort": nodeMap[k].GrpcPort,
+							"httpPort": nodeMap[k].RestPort,
+						}).Debug("Found node")
 					}
 					for ch := range service.ListUpdatedChans {
 						service.ListUpdatedChans[ch] <- memberList
@@ -199,4 +198,11 @@ func k8sFindPodInfo(k8sClient *kubernetes.Clientset, namespace string, podName s
 		PodName:        podName,
 		ReplicaSetName: *replicasetName,
 	}, nil
+}
+
+func viperTryGetString(key string, defaultVal string) string {
+	if viper.IsSet(key) {
+		return viper.GetString(key)
+	}
+	return defaultVal
 }

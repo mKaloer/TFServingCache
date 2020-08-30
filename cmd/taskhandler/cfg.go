@@ -20,4 +20,23 @@ func SetConfig() {
 		}
 	}
 
+	// Set log level
+	switch viper.GetString("logLevel") {
+	case "panic":
+		log.SetLevel(log.PanicLevel)
+		break
+	case "fatal":
+		log.SetLevel(log.FatalLevel)
+		break
+	case "warning":
+		log.SetLevel(log.WarnLevel)
+		break
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+		break
+	case "info":
+	default:
+		log.SetLevel(log.InfoLevel)
+	}
+
 }
