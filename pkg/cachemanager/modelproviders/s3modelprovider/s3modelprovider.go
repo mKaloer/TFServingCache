@@ -84,7 +84,7 @@ func (provider S3ModelProvider) LoadModel(modelName string, modelVersion int64, 
 			Key:    obj.Key,
 		})
 		if err != nil {
-			log.WithError(err).Errorf("Could not download object file: %s", obj.Key)
+			log.WithError(err).Errorf("Could not download object file: %s", *obj.Key)
 			return err
 		}
 		totalSize += sizeOnDisk

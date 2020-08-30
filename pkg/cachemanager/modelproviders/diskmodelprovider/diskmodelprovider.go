@@ -61,7 +61,7 @@ func findSrcPathForModel(modelDir string, modelVersion int64) (string, error) {
 
 		return path.Join(modelDir, match), nil
 	} else if numMatches > 1 {
-		log.Warn("Several (%d) matches for model found. Using the first match.", numMatches)
+		log.Warnf("Several (%d) matches for model found. Using the first match.", numMatches)
 		return path.Join(modelDir, match), nil
 	} else {
 		return "", errors.New("No matching model found")

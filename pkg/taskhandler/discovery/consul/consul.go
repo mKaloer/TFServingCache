@@ -29,16 +29,16 @@ func NewDiscoveryService(healthCheck func() (bool, error)) (*ConsulDiscoveryServ
 
 	ttl := viper.GetDuration("serviceDiscovery.heartbeatTTL") * time.Second
 
-	serviceId := viper.GetString("serviceDiscovery.serviceId")
+	serviceId := viper.GetString("serviceDiscovery.consul.serviceId")
 	if serviceId == "" {
-		serviceId = viper.GetString("serviceDiscovery.serviceName")
+		serviceId = viper.GetString("serviceDiscovery.consul.serviceName")
 	}
 
 	c := &ConsulDiscoveryService{
 		ListUpdatedChans: make(map[string]chan []taskhandler.ServingService, 0),
 		ConsulClient:     client,
 		ttl:              ttl,
-		ServiceName:      viper.GetString("serviceDiscovery.serviceName"),
+		ServiceName:      viper.GetString("serviceDiscovery.consul.serviceName"),
 		ServiceID:        serviceId,
 		HealthCheckFun:   healthCheck,
 	}
@@ -100,7 +100,7 @@ func (consul *ConsulDiscoveryService) RegisterService() error {
 						// Fallback to node addr
 						addr = res[k].Node.Address
 					}
-					log.Debugf("Found node: %s: %s:%s:%s", id, addr, restPort, grpcPort)
+					log.Debugf("Found node: %s: %s:%d:%d", id, addr, restPort, grpcPort)
 					passingNodes = append(passingNodes, taskhandler.ServingService{
 						Host:     addr,
 						RestPort: restPort,
