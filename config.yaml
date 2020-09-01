@@ -10,7 +10,7 @@ metrics:
 
 modelProvider:
   type: diskProvider
-  baseDir: "/mnt/e/temp/models"
+  baseDir: "./model_repo"
 #modelProvider:
 #  type: s3Provider
 #  s3:
@@ -34,7 +34,7 @@ proxy:
   replicasPerModel: 3
   grpcTimeout: 10
 
-# serviceDiscovery:
+serviceDiscovery:
   #### CONSUL ####
   #type: consul
   #heartbeatTTL: 5
@@ -51,11 +51,11 @@ proxy:
   #  authorization:
   #    username: root
   #    password: foobar
-#  type: k8s
-#  k8s:
+  type: k8s
+  k8s:
     # field selector for k8s TF serving cache pods
-#    fieldSelector:
-#      metadata.name: tf-serving-cache
-#    portNames:
-#      grpcCache: grpccache
-#      httpCache: httpcache
+    fieldSelector:
+      metadata.name: tf-serving-cache
+    portNames:
+      grpcCache: grpccache
+      httpCache: httpcache
