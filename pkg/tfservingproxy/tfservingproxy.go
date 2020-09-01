@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-var tfServingRestURLMatch = regexp.MustCompile(`(?i)^/v1/models/(?P<modelName>[a-z0-9]+)(/versions/(?P<version>[0-9]+))?`)
+var tfServingRestURLMatch = regexp.MustCompile(`(?i)^/v1/models/(?P<modelName>[^/]+)(/versions/(?P<version>[0-9]+))?`)
 var promRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "tfservingcache_proxy_requests_total",
 	Help: "The total number of requests",

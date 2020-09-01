@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -10,6 +12,8 @@ func SetConfig() {
 	viper.AddConfigPath(".")
 	viper.SetConfigType("yaml")
 	viper.SetEnvPrefix("tfsc")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig() // Find and read the config file
 	if err != nil {             // Handle errors reading the config file
@@ -20,8 +24,12 @@ func SetConfig() {
 		}
 	}
 
+	logLevel := viper.GetString("logLevel")
+
+	log.Infof("Log Level: %v", logLevel)
+
 	// Set log level
-	switch viper.GetString("logLevel") {
+	switch logLevel {
 	case "panic":
 		log.SetLevel(log.PanicLevel)
 		break
