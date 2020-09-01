@@ -1,0 +1,25 @@
+proxyRestPort: 8093
+proxyGrpcPort: 8100
+cacheRestPort: 8094
+cacheGrpcPort: 8095
+
+metrics:
+  metricsPath: "/monitoring/prometheus/metrics"
+  modelLabels: false
+
+modelProvider:
+  type: diskProvider
+  baseDir: "/model_repo"
+
+modelCache:
+  hostModelPath: "/model_cache"
+  size: 30000
+
+serving:
+  servingModelPath: "/model_cache"
+  grpcHost: "localhost:8500"
+  restHost: "http://localhost:8501"
+  maxConcurrentModels: 2
+  grpcConfigTimeout: 10 # timeout in seconds
+  grpcPredictTimeout: 60
+  metricsPath: "/monitoring/prometheus/metrics"

@@ -20,31 +20,71 @@ func main() {
 
 	SetConfig()
 
-	dService := CreateDiscoveryService()
+	cleanup := serveCache()
+	defer cleanup()
+
+	serveProxy()
+
+	log.Info("Server stopped")
+}
+
+func serveCache() func() error {
+
+	var (
+		restPort = viper.GetInt("cacheRestPort")
+		grpcPort = viper.GetInt("cacheGrpcPort")
+	)
+
+	log.Infof("Cache is ready to handle requests at rest:%v and grpc:%v", restPort, grpcPort)
 
 	cache := CreateCacheManager()
+
 	cacheMux := http.NewServeMux()
+
 	cacheMux.HandleFunc("/v1/models/", cache.ServeRest())
-	go http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("cacheRestPort")), cacheMux)
+	go http.ListenAndServe(fmt.Sprintf(":%d", restPort), cacheMux)
 
-	go cache.GrpcProxy.Listen(viper.GetInt("cacheGrpcPort"))
-	defer cache.GrpcProxy.Close()
+	go cache.GrpcProxy.Listen(grpcPort)
 
-	tHandler := taskhandler.NewTaskHandler(dService)
-	err := tHandler.ConnectToCluster()
-	if err != nil {
-		log.WithError(err).Fatal("Could not connect to cluster")
-	}
-	defer tHandler.DisconnectFromCluster()
+	return cache.GrpcProxy.Close
+}
 
-	go tHandler.GrpcProxy.Listen(viper.GetInt("proxyGrpcPort"))
-	defer tHandler.GrpcProxy.Close()
+func serveProxy() {
+
+	var (
+		metricsPath = viper.GetString("metrics.metricsPath")
+		restPort    = viper.GetInt("proxyRestPort")
+		grpcPort    = viper.GetInt("proxyGrpcPort")
+	)
 
 	proxyMux := http.NewServeMux()
-	proxyMux.HandleFunc("/v1/models/", tHandler.ServeRest())
-	proxyMux.HandleFunc(viper.GetString("metrics.metricsPath"), promhttp.Handler().ServeHTTP)
 
-	http.ListenAndServe(fmt.Sprintf(":%d", viper.GetInt("proxyRestPort")), proxyMux)
+	dService := CreateDiscoveryService()
+	if dService != nil {
+
+		tHandler := taskhandler.NewTaskHandler(dService)
+		err := tHandler.ConnectToCluster()
+		if err != nil {
+			log.WithError(err).Fatal("Could not connect to cluster")
+		}
+		defer tHandler.DisconnectFromCluster()
+
+		go tHandler.GrpcProxy.Listen(grpcPort)
+		defer tHandler.GrpcProxy.Close()
+
+		proxyMux.HandleFunc("/v1/models/", tHandler.ServeRest())
+
+		log.Infof("Proxy is ready to handle requests at rest:%v and grpc:%v", restPort, grpcPort)
+
+	} else {
+		log.Info("Proxy is disabled")
+	}
+
+	proxyMux.HandleFunc(metricsPath, promhttp.Handler().ServeHTTP)
+
+	log.Infof("Metrics is available at %v:%v", restPort, metricsPath)
+
+	http.ListenAndServe(fmt.Sprintf(":%d", restPort), proxyMux)
 }
 
 func CreateCacheManager() *cachemanager.CacheManager {
@@ -62,21 +102,25 @@ func CreateCacheManager() *cachemanager.CacheManager {
 func CreateDiscoveryService() taskhandler.DiscoveryService {
 
 	var dService taskhandler.DiscoveryService = nil
-	var err error = nil
-	switch viper.GetString("serviceDiscovery.type") {
-	case "consul":
-		dService, err = consul.NewDiscoveryService(healthCheck)
-	case "etcd":
-		dService, err = etcd.NewDiscoveryService(healthCheck)
-	case "k8s":
-		dService, err = kubernetes.NewDiscoveryService()
-	default:
-		log.Fatalf("Unsupported discoveryService: %s", viper.GetString("serviceDiscovery.type"))
+
+	if viper.IsSet("serviceDiscovery.type") {
+		var err error = nil
+		switch viper.GetString("serviceDiscovery.type") {
+		case "consul":
+			dService, err = consul.NewDiscoveryService(healthCheck)
+		case "etcd":
+			dService, err = etcd.NewDiscoveryService(healthCheck)
+		case "k8s":
+			dService, err = kubernetes.NewDiscoveryService()
+		default:
+			log.Fatalf("Unsupported discoveryService: %s", viper.GetString("serviceDiscovery.type"))
+		}
+
+		if err != nil {
+			log.WithError(err).Fatal("Could not create discovery service")
+		}
 	}
 
-	if err != nil {
-		log.WithError(err).Fatal("Could not create discovery service")
-	}
 	return dService
 }
 
