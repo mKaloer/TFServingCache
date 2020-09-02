@@ -1,5 +1,4 @@
 .git
-build
-!build/docker/config.yaml
+deploy
+!deploy/docker/config.yaml
 docs
-

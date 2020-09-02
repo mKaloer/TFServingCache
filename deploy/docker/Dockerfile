@@ -19,6 +19,6 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /tfservingcache/
 
 COPY --from=builder /go/github.com/mKaloer/TFServingCache/bin/* .
-ADD build/docker/config.yaml .
+ADD deploy/docker/config.yaml .
 
 ENTRYPOINT ["./taskhandler"]

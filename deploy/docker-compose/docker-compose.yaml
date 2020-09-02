@@ -7,10 +7,8 @@ services:
     image: tfservingcache
     build: 
         context: ./../..
-        dockerfile: build/docker/Dockerfile
+        dockerfile: deploy/docker/Dockerfile
     ports:
-      - "8093:8093"
-      - "8100:8100"
       - "8094:8094"
       - "8095:8095"
     volumes:
@@ -30,12 +28,11 @@ services:
       - -c
       - echo 'model_config_list {}' > /models/models.config && /usr/bin/tensorflow_model_server --port=8500 --rest_api_port=8501 --model_config_file=/models/models.config
     ports:
-      - "8500:8500"
-      - "8501:8501"
+      - "8500"
+      - "8501"
   
 volumes:
   model_cache:
     driver_opts:
       type: tmpfs
       device: tmpfs
-
