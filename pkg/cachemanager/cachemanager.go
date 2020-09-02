@@ -176,6 +176,9 @@ func New(
 	modelFetchTimeout float32,
 	maxConcurrentModels int,
 ) *CacheManager {
+
+	log.Debugf("New CacheManager BasePath:'%v', GRPCHost:'%v', RESTHost:'%v'", tfServingServerBasePath, tfservingServerGRPCHost, tfservingServerRESTHost)
+
 	restUrl, err := url.Parse(tfservingServerRESTHost)
 	if err != nil {
 		return nil

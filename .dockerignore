@@ -1,0 +1,4 @@
+.git
+deploy
+!deploy/docker/config.yaml
+docs

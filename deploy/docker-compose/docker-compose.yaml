@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  cache:
+    depends_on:
+      - tfserving
+    image: tfservingcache
+    build: 
+        context: ./../..
+        dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8094:8094"
+      - "8095:8095"
+    volumes:
+      - model_cache:/model_cache
+      - ${MODEL_REPO:-./model_repo}:/model_repo
+    environment:
+      - TFSC_SERVING_GRPCHOST=tfserving:8500
+      - TFSC_SERVING_RESTHOST=http://tfserving:8501
+      - TFSC_LOGLEVEL=debug
+  tfserving:
+    image: "tensorflow/serving"
+    volumes:
+      - model_cache:/model_cache
+    # don't know why but tfserving don't want work without existing config
+    entrypoint:
+      - /bin/bash
+      - -c
+      - echo 'model_config_list {}' > /models/models.config && /usr/bin/tensorflow_model_server --port=8500 --rest_api_port=8501 --model_config_file=/models/models.config
+    ports:
+      - "8500"
+      - "8501"
+  
+volumes:
+  model_cache:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
