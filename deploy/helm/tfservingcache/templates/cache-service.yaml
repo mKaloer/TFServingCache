@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tfservingcache.fullname" . }}-cache
+  labels:
+    {{- include "tfservingcache.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.cache.ports.cacheHttp }}
+      protocol: TCP
+      name: http-cache
+    - port: {{ .Values.cache.ports.cacheGrpc }}
+      protocol: TCP
+      name: grpc-cache
+  selector:
+    {{- include "tfservingcache.selectorLabels" . | nindent 4 }}

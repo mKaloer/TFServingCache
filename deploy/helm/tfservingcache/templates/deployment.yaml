@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tfservingcache.fullname" . }}
+  labels:
+    {{- include "tfservingcache.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "tfservingcache.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        {{- include "tfservingcache.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: "cache"
+          image: "{{ .Values.cache.image.repository }}:{{ .Values.cache.image.tag }}"
+          imagePullPolicy: {{ .Values.cache.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.cache.ports.proxyHttp }}
+              name: http-proxy
+            - containerPort: {{ .Values.cache.ports.proxyGrpc }}
+              name: grpc-proxy
+            - containerPort: {{ .Values.cache.ports.cacheHttp }}
+              name: http-cache
+            - containerPort: {{ .Values.cache.ports.cacheGrpc }}
+              name: grpc-cache
+          volumeMounts:
+            - name: cache-config
+              mountPath: /tfservingcache/config.yaml
+              subPath: config.yaml
+          {{- with .Values.models.provider.hostPath }}              
+            - name: models
+              mountPath: {{ .mount }}
+          {{- end }}
+            - name: cache
+              mountPath: {{ .Values.models.cache.path }}
+          resources:
+            {{- toYaml .Values.cache.resources | nindent 12 }}
+        - name: "serving"
+          image: "{{ .Values.serving.image.repository }}:{{ .Values.serving.image.tag }}"
+          imagePullPolicy: {{ .Values.serving.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - echo 'model_config_list {}' > /models/models.config && /usr/bin/tensorflow_model_server --port={{ .Values.serving.ports.grpc }} --rest_api_port={{ .Values.serving.ports.http }} --model_config_file=/models/models.config
+          volumeMounts:
+            - name: cache
+              mountPath: {{ .Values.models.cache.path }}
+          resources:
+            {{- toYaml .Values.serving.resources | nindent 12 }}
+      volumes:
+        - name: cache-config
+          configMap:
+            name: {{ include "tfservingcache.fullname" . }}
+        - name: cache
+          emptyDir: {}
+      {{- with .Values.models.provider.hostPath }}
+        - name: models
+          hostPath:
+            path: {{ .path }}
+            type: Directory
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,15 @@
+1. The list of deployed PODs can be obtained like os:
+kubectl get pods -l "app.kubernetes.io/name={{ include "tfservingcache.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+2. Get the application URL by running these commands:
+{{- if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "tfservingcache.fullname" . }}-proxy)
+  export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods -l "app.kubernetes.io/name={{ include "tfservingcache.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  echo "Visit http://127.0.0.1:8080 or grpc://127.0.0.1:8081 to use your application"
+  kubectl port-forward $POD_NAME 8080:{{ .Values.cache.ports.proxyHttp }} 8081:{{ .Values.cache.ports.proxyGrpc }}
+{{- end }}
+
+3. Please be patient, the readiness probe is not implemented yet.
