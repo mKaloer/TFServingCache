@@ -11,7 +11,6 @@ import (
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/consul"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/etcd"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler/discovery/kubernetes"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -52,9 +51,12 @@ func serveCache() func() error {
 func serveProxy() {
 
 	var (
-		metricsPath = viper.GetString("metrics.metricsPath")
-		restPort    = viper.GetInt("proxyRestPort")
-		grpcPort    = viper.GetInt("proxyGrpcPort")
+		restPort = viper.GetInt("proxyRestPort")
+		restHost = viper.GetString("serving.restHost")
+		grpcPort = viper.GetInt("proxyGrpcPort")
+
+		metricsPath    = viper.GetString("metrics.path")
+		metricsTimeout = viper.GetInt("metrics.timeout")
 	)
 
 	proxyMux := http.NewServeMux()
@@ -80,7 +82,7 @@ func serveProxy() {
 		log.Info("Proxy is disabled")
 	}
 
-	proxyMux.HandleFunc(metricsPath, promhttp.Handler().ServeHTTP)
+	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(restHost, metricsPath, metricsTimeout))
 
 	log.Infof("Metrics is available at %v:%v", restPort, metricsPath)
 
