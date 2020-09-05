@@ -1,10 +1,10 @@
 # Helm chart authoring
 
 ## Debugging and testing
-First of all build docker image from sources 
+First of all, build the docker image from source with the repository root folder as the working directory
 
 ```bash
-$ docker build . -f deploy/docker/Dockerfile -t latest
+$ docker build . -f deploy/docker/Dockerfile -t tfservingcache:latest
 # Successfully built b40bbe9181a5
 # Successfully tagged latest:latest
 ```
