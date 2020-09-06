@@ -31,6 +31,9 @@ In order to identify which TF Serving service that should provide a model, TF Se
 | `metrics.metricsPath`                          | string      |               | URL path where metrics are exposed                                   |
 | `metrics.modelLabels`                          | bool        |               | Whether to expose model names and versions as metric labels          |
 | `modelProvider.type`                           | string      |               | The model provider service, either `diskProvider` or `s3Provider`    |
+| `modelProvider.diskProvider.basePath`          | string      |               | The path to the disk model provider                                  |
+| `modelProvider.s3.bucket`                      | string      |               | The S3 bucket for the model provider                                 |
+| `modelProvider.s3.basePath`                    | string      |               | Prefix for S3 keys                                                   |
 | `modelCache.hostModelPath`                     | string      |               | The directory path specifying where the cached models are stored     |
 | `modelCache.size`                              | int         |               | The size of the cache in bytes                                       |
 | `serving.servingModelPath`                     | string      |               | The directory path where models are stored in TF Serving             |

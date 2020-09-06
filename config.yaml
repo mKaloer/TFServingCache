@@ -10,7 +10,8 @@ metrics:
 
 modelProvider:
   type: diskProvider
-  baseDir: "./model_repo"
+  diskProvider:
+    baseDir: "./model_repo"
 #modelProvider:
 #  type: s3Provider
 #  s3:

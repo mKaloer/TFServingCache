@@ -131,7 +131,7 @@ func CreateModelProvider() cachemanager.ModelProvider {
 	switch viper.GetString("modelProvider.type") {
 	case "diskProvider":
 		mProvider = diskmodelprovider.DiskModelProvider{
-			BaseDir: viper.GetString("modelProvider.baseDir"),
+			BaseDir: viper.GetString("modelProvider.diskProvider.baseDir"),
 		}
 	case "s3Provider":
 		mProvider, err = s3modelprovider.NewS3ModelProvider(
