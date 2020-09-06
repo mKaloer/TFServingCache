@@ -9,8 +9,9 @@ services:
         context: ./../..
         dockerfile: deploy/docker/Dockerfile
     ports:
-      - "8094:8094"
-      - "8095:8095"
+      - "8093:8093" # http metrics
+      - "8094:8094" # http cache 
+      - "8095:8095" # grpc cache
     volumes:
       - model_cache:/model_cache
       - ${MODEL_REPO:-./model_repo}:/model_repo
@@ -26,7 +27,14 @@ services:
     entrypoint:
       - /bin/bash
       - -c
-      - echo 'model_config_list {}' > /models/models.config && /usr/bin/tensorflow_model_server --port=8500 --rest_api_port=8501 --model_config_file=/models/models.config
+      - > 
+        echo 'model_config_list {}' > /models/models.config \
+        && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > /models/monitoring.config \
+        && /usr/bin/tensorflow_model_server \
+          --port=8500 \
+          --rest_api_port=8501 \
+          --model_config_file=/models/models.config \
+          --monitoring_config_file='/models/monitoring.config'
     ports:
       - "8500"
       - "8501"

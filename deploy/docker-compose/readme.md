@@ -11,12 +11,12 @@ Here's a small instruction on how to run TFservingCache with Docker:
 ```bash
 $ git clone https://github.com/tensorflow/serving
 # Location of demo models
-$ MODEL_REPO="$(pwd)/serving/tensorflow_serving/servables/tensorflow/testdata"
+$ export MODEL_REPO="$(pwd)/serving/tensorflow_serving/servables/tensorflow/testdata"
 ```
 - then TFServing with the cache attached to it can be started like so:
 ```bash
 $ cd <TFServingCache repostory folder>/deploy/docker-compose
-$ docker-copose up --build
+$ docker-compose up --build
 # the models will be consumed from MODEL_REPO assigned in the above step
 # the --build flag will force build the cache docker image from sources
 ```
@@ -40,6 +40,12 @@ $ curl http://localhost:8094/v1/models/saved_model_half_plus_two_cpu/versions/00
 $ curl -d '{"instances": [1.0, 2.0, 5.0]}' -X POST http://localhost:8094/v1/models/saved_model_half_plus_two_cpu/versions/00000123:predict
 # Returns => 
 # { "predictions": [2.5, 3.0, 4.5] }
+
+$ curl http://localhost:8093/monitoring/prometheus/metrics
+# Returns => 
+# # TYPE :tensorflow:cc:saved_model:load_attempt_count counter
+# :tensorflow:cc:saved_model:load_attempt_count{model_path="/model_cache/saved_model_half_plus_two_cpu/123",status="success"} 1
+# ...
 ```
 
 # TODO

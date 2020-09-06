@@ -16,7 +16,8 @@ data:
     cacheGrpcPort: {{ .Values.cache.ports.cacheGrpc }}
 
     metrics:
-      metricsPath: "/monitoring/prometheus/metrics"
+      path: "/monitoring/prometheus/metrics"
+      timeout: 3
       modelLabels: false
 
     modelProvider:
@@ -43,7 +44,6 @@ data:
       maxConcurrentModels: 2
       grpcConfigTimeout: 10 
       grpcPredictTimeout: 60
-      metricsPath: "/monitoring/prometheus/metrics"    
 
     serviceDiscovery:
       type: k8s

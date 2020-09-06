@@ -53,7 +53,14 @@ spec:
           command:
             - /bin/bash
             - -c
-            - echo 'model_config_list {}' > /models/models.config && /usr/bin/tensorflow_model_server --port={{ .Values.serving.ports.grpc }} --rest_api_port={{ .Values.serving.ports.http }} --model_config_file=/models/models.config
+            - >
+              echo 'model_config_list {}' > /models/models.config \
+              && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > /models/monitoring.config \
+              && /usr/bin/tensorflow_model_server \
+                --port={{ .Values.serving.ports.grpc }} \
+                --rest_api_port={{ .Values.serving.ports.http }} \
+                --model_config_file=/models/models.config \
+                --monitoring_config_file=/models/monitoring.config
           volumeMounts:
             - name: cache
               mountPath: {{ .Values.models.cache.path }}

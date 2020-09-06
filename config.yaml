@@ -4,7 +4,11 @@ cacheRestPort: 8094
 cacheGrpcPort: 8095
 
 metrics:
-  metricsPath: "/monitoring/prometheus/metrics"
+  # this path used to publish metrics from proxy endpoint 
+  # and the same path is used to obtain metrics from serving 
+  path: "/monitoring/prometheus/metrics"
+  # timeout in seconds
+  timeout: 3 
   # Whether to add model name and version as prometheus labels
   modelLabels: false
 
@@ -29,7 +33,8 @@ serving:
   maxConcurrentModels: 2
   grpcConfigTimeout: 10 # timeout in seconds
   grpcPredictTimeout: 60
-  metricsPath: "/monitoring/prometheus/metrics"
+  # the TFServing Prometheus metrics path, if not specified, the metrics.path will be used
+  # metricsPath : "/monitoring/prometheus/metrics"
 
 proxy:
   replicasPerModel: 3
