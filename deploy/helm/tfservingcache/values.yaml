@@ -1,0 +1,55 @@
+# Default values for tfservingcache.
+nameOverride: ""
+fullnameOverride: ""
+
+cache:
+  image:
+    repository: tfservingcache
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources: {}
+  ports:
+    proxyHttp: 8093
+    proxyGrpc: 8100
+    cacheHttp: 8094
+    cacheGrpc: 8095
+
+serving:
+  image:
+    repository: tensorflow/serving
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources: {}
+  ports:
+    http: 8501
+    grpc: 8500
+
+service:
+  type: ClusterIP
+  ports:
+    http: 8501
+    grpc: 8500
+
+models:
+  provider:
+    hostPath: 
+      path: /run/desktop/mnt/host/wsl/models
+      mount: /model_repo
+#   s3: 
+#     bucket: foo
+#     path: models/foo/bar
+  cache:
+    size: 30000
+    path: /model_cache
+
+replicaCount: 2
+
+imagePullSecrets: []
+
+podAnnotations: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tfservingcache.fullname" . }}-proxy
+  labels:
+    {{- include "tfservingcache.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.ports.http }}
+      targetPort: {{ .Values.cache.ports.proxyHttp }}
+      protocol: TCP
+      name: http-proxy
+    - port:  {{ .Values.service.ports.grpc }}
+      targetPort: {{ .Values.cache.ports.proxyGrpc }}
+      protocol: TCP
+      name: grpc-proxy
+  selector:
+    {{- include "tfservingcache.selectorLabels" . | nindent 4 }}
