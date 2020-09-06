@@ -58,10 +58,12 @@ func serveProxy() {
 
 		metricsPath    = viper.GetString("metrics.path")
 		metricsTimeout = viper.GetInt("metrics.timeout")
+
+		servingMetricsPath = metricsPath
 	)
 
 	if viper.IsSet("serving.metricsPath") {
-		metricsPath = viper.GetString("serving.metricsPath")
+		servingMetricsPath = viper.GetString("serving.metricsPath")
 	}
 
 	proxyMux := http.NewServeMux()
@@ -87,7 +89,7 @@ func serveProxy() {
 		log.Info("Proxy is disabled")
 	}
 
-	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(servingRestHost, metricsPath, metricsTimeout))
+	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(servingRestHost, servingMetricsPath, metricsTimeout))
 
 	log.Infof("Metrics is available at %v:%v", restPort, metricsPath)
 
