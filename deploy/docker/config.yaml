@@ -9,7 +9,8 @@ metrics:
 
 modelProvider:
   type: diskProvider
-  baseDir: "/model_repo"
+  diskProvider:
+    baseDir: "/model_repo"
 
 modelCache:
   hostModelPath: "/model_cache"
