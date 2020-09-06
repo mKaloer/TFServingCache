@@ -33,12 +33,14 @@ serving:
   maxConcurrentModels: 2
   grpcConfigTimeout: 10 # timeout in seconds
   grpcPredictTimeout: 60
+  # the TFServing Prometheus metrics path, if not specified, the metrics.path will be used
+  # metricsPath : "/monitoring/prometheus/metrics"
 
 proxy:
   replicasPerModel: 3
   grpcTimeout: 10
 
-  serviceDiscovery:
+serviceDiscovery:
   #### CONSUL ####
   #type: consul
   #heartbeatTTL: 5

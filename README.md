@@ -28,7 +28,8 @@ In order to identify which TF Serving service that should provide a model, TF Se
 | `proxyGrpcPort`                                | int         |               | gRPC port for the proxy service                                      |
 | `cacheRestPort`                                | int         |               | HTTP port for the cache service                                      |
 | `cacheGrpcPort`                                | int         |               | gRPC port for the cache service                                      |
-| `metrics.metricsPath`                          | string      |               | URL path where metrics are exposed                                   |
+| `metrics.path`                                 | string      |               | URL path where metrics are exposed                                   |
+| `metrics.timeout`                              | int         |               | Timeout (in second) for gathering metrics from TF Serving            |
 | `metrics.modelLabels`                          | bool        |               | Whether to expose model names and versions as metric labels          |
 | `modelProvider.type`                           | string      |               | The model provider service, either `diskProvider` or `s3Provider`    |
 | `modelProvider.diskProvider.basePath`          | string      |               | The path to the disk model provider                                  |
@@ -42,7 +43,7 @@ In order to identify which TF Serving service that should provide a model, TF Se
 | `serving.maxConcurrentModels`                  | int         |               | The number of models to be serving simultaneously                    |
 | `serving.grpcConfigTimeout`                    | int         |               | gRPC config timeout in seconds                                       |
 | `serving.grpcPredictTimeout`                   | int         |               | gRPC prediction timeout in seconds                                   |
-| `serving.metricsPath`                          | string      |               | Path to TF Serving metrics                                           |
+| `serving.metricsPath`                          | string      | `metrics.path`| Path to TF Serving metrics                                           |
 | `proxy.replicasPerModel`                       | int         |               | The number of nodes that should serve each model                     |
 | `proxy.grpcTimeout`                            | int         |               | Timeout for the gRPC proxy                                           |
 | `serviceDiscovery.type`                        | string      |               | The service discovery type to use. Either `consul`, `etcd`, or `k8s` |

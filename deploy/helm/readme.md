@@ -38,15 +38,15 @@ curl http://tfserving-tfservingcache:8094/v1/models/saved_model_half_plus_two_cp
 ```
 Use node port service type
 ```bash
-$ helm upgrade tfserving . --install \
+$ helm upgrade tfcluster deploy/helm/tfservingcache --install \
 --set models.provider.hostPath.path=/run/desktop/mnt/host/wsl/models \
 --set service.type=NodePort \
 --set logLevel=debug
 
 # get service to obtain host 
-$ kubectl get service -l app.kubernetes.io/instance=tfserving
+$ kubectl get service -l app.kubernetes.io/instance=tfcluster
 # NAME                       TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)                                                       AGE
-# tfserving-tfservingcache   NodePort   10.106.18.87   <none>        8093:31230/TCP,8100:32460/TCP,8094:32767/TCP,8095:31991/TCP   12m
+# tfcluster-tfservingcache   NodePort   10.106.18.87   <none>        8093:31230/TCP,8100:32460/TCP,8094:32767/TCP,8095:31991/TCP   12m
 ```
 
 ## Host Path Volume (WSL2)

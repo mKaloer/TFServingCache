@@ -29,7 +29,7 @@ services:
       - -c
       - > 
         echo 'model_config_list {}' > /models/models.config \
-        && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > /models/monitoring.config
+        && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > /models/monitoring.config \
         && /usr/bin/tensorflow_model_server \
           --port=8500 \
           --rest_api_port=8501 \

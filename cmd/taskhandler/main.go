@@ -52,12 +52,17 @@ func serveProxy() {
 
 	var (
 		restPort = viper.GetInt("proxyRestPort")
-		restHost = viper.GetString("serving.restHost")
 		grpcPort = viper.GetInt("proxyGrpcPort")
+
+		servingRestHost = viper.GetString("serving.restHost")
 
 		metricsPath    = viper.GetString("metrics.path")
 		metricsTimeout = viper.GetInt("metrics.timeout")
 	)
+
+	if viper.IsSet("serving.metricsPath") {
+		metricsPath = viper.GetString("serving.metricsPath")
+	}
 
 	proxyMux := http.NewServeMux()
 
@@ -82,7 +87,7 @@ func serveProxy() {
 		log.Info("Proxy is disabled")
 	}
 
-	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(restHost, metricsPath, metricsTimeout))
+	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(servingRestHost, metricsPath, metricsTimeout))
 
 	log.Infof("Metrics is available at %v:%v", restPort, metricsPath)
 

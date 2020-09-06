@@ -2,4 +2,4 @@ This file contains a list of people who have contributed to
 TFServingCache.
 
 Mads Kalør <mads@kaloer.com>
-AlexMihalev
+Alex Mihalev <alexmihalev@gmail.com>
