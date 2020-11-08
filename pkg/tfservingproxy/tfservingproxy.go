@@ -89,7 +89,19 @@ func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
 		promRequestsTotal.WithLabelValues("rest").Inc()
 		log.Debugf("Handling URL: %s", req.URL.String())
 		matches := tfServingRestURLMatch.FindStringSubmatch(req.URL.String())
-		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
+		if len(matches) == 0 {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(rw).Encode(struct {
+				Status  string
+				Message string
+			}{
+				Status:  "Error",
+				Message: "Not found",
+			})
+			promRequestsFailed.WithLabelValues("rest").Inc()
+			return
+		}
 		if matches[3] == "" {
 			rw.Header().Set("Content-Type", "application/json")
 			rw.WriteHeader(http.StatusBadRequest)
@@ -103,6 +115,7 @@ func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
 			promRequestsFailed.WithLabelValues("rest").Inc()
 			return
 		}
+		log.Debugf("Model name: '%s' Version: '%s'", matches[1], matches[3])
 		handler.RestProxy.ServeHTTP(rw, req)
 	}
 	return proxyFun
