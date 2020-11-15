@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go v1.28.6
 	github.com/coreos/etcd v3.3.18+incompatible // indirect
 	github.com/golang/protobuf v1.3.2
+	github.com/google/go-cmp v0.4.0
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/consul/api v1.3.0
 	github.com/otiai10/copy v1.0.2
