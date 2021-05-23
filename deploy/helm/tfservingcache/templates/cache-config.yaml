@@ -1,9 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "tfservingcache.fullname" . }}
-  labels:
-    {{- include "tfservingcache.labels" . | nindent 4 }}
+  name: {{include "tfservingcache.fullname" .}}
+  labels: {{- include "tfservingcache.labels" . | nindent 4}}
 data:
   config.yaml: |
     {{- if .Values.logLevel }}
@@ -31,6 +30,14 @@ data:
       s3:
         bucket: {{ .bucket }}
         basePath: {{ .path }}
+    {{- end }}
+    {{- with .Values.models.provider.azBlob }}
+      type: azBlobProvider
+      azBlob:
+        container: {{ .container }}
+        basePath: {{ .path }}
+        accountName: {{ .accountName }}
+        accountKey: {{ .accountKey }}
     {{- end }}
 
     modelCache:

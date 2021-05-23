@@ -3,6 +3,8 @@ module github.com/mKaloer/TFServingCache
 go 1.13
 
 require (
+	github.com/Azure/azure-pipeline-go v0.2.3
+	github.com/Azure/azure-storage-blob-go v0.13.0
 	github.com/aws/aws-sdk-go v1.28.6
 	github.com/coreos/etcd v3.3.18+incompatible // indirect
 	github.com/golang/protobuf v1.3.2
