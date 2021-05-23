@@ -53,7 +53,7 @@ func (provider S3ModelProvider) LoadModel(modelName string, modelVersion int64, 
 	modelLocation := provider.getKeyForModel(modelName, modelVersion)
 
 	destPath := path.Join(destinationDir, modelName, strconv.FormatInt(modelVersion, 10))
-	err := os.MkdirAll(destPath, os.ModeDir)
+	err := os.MkdirAll(destPath, 0777)
 	if err != nil {
 		log.WithError(err).Errorf("Could not create model dir: %s", destPath)
 		return nil, err
@@ -66,7 +66,7 @@ func (provider S3ModelProvider) LoadModel(modelName string, modelVersion int64, 
 			// Make sure dir is created
 			paths := strings.Split(relativeKey, "/")
 			objFolder := path.Join(append([]string{destPath}, paths[:len(paths)-1]...)...)
-			err := os.MkdirAll(objFolder, os.ModeDir)
+			err := os.MkdirAll(objFolder, 0777)
 			if err != nil {
 				log.WithError(err).Errorf("Could not create object dir: %s", objFolder)
 				return err

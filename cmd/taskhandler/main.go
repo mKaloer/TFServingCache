@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
+	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/azblobmodelprovider"
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/diskmodelprovider"
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/s3modelprovider"
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
@@ -91,7 +92,7 @@ func serveProxy() {
 
 	proxyMux.Handle(metricsPath, taskhandler.MetricsHandler(servingRestHost, servingMetricsPath, metricsTimeout))
 
-	log.Infof("Metrics is available at %v:%v", restPort, metricsPath)
+	log.Infof("Metrics are available at %v:%v", restPort, metricsPath)
 
 	http.ListenAndServe(fmt.Sprintf(":%d", restPort), proxyMux)
 }
@@ -146,6 +147,20 @@ func CreateModelProvider() cachemanager.ModelProvider {
 		mProvider, err = s3modelprovider.NewS3ModelProvider(
 			viper.GetString("modelProvider.s3.bucket"),
 			viper.GetString("modelProvider.s3.basePath"))
+	case "azBlobProvider":
+		if viper.IsSet("modelProvider.azBlob.containerUrl") {
+			mProvider, err = azblobmodelprovider.NewAZBlobModelProviderWithUrl(
+				viper.GetString("modelProvider.azBlob.containerUrl"),
+				viper.GetString("modelProvider.azBlob.basePath"),
+				viper.GetString("modelProvider.azBlob.accountName"),
+				viper.GetString("modelProvider.azBlob.accountKey"))
+		} else {
+			mProvider, err = azblobmodelprovider.NewAZBlobModelProvider(
+				viper.GetString("modelProvider.azBlob.container"),
+				viper.GetString("modelProvider.azBlob.basePath"),
+				viper.GetString("modelProvider.azBlob.accountName"),
+				viper.GetString("modelProvider.azBlob.accountKey"))
+		}
 	default:
 		log.Fatalf("Unsupported discoveryService: %s", viper.GetString("serviceDiscovery.type"))
 	}
