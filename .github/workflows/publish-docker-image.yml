@@ -27,23 +27,14 @@ jobs:
         uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
         with:
           images: mkaloer/tfservingcache
-      
+  
       - name: Build and push Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
         with:
           context: .
           file: ./deploy/docker/Dockerfile
           push: true
-          tags: ${{ github.run_id }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
-        with:
-          context: .
-          file: ./deploy/docker/Dockerfile
-          push: true
-          tags: ${{ github.run_id }}
+          tags: tfservingcache:${{ github.run_id }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Replace tokens
@@ -53,10 +44,6 @@ jobs:
         env:
           DOCKER_TAG: ${{ github.run_id }}
 
-  publish_helm_chart:
-    name: Publish helm chart
-    runs-on: ubuntu-latest
-    steps:
       - name: Checkout
         uses: actions/checkout@v2
         with:
@@ -76,5 +63,6 @@ jobs:
         uses: helm/chart-releaser-action@v1.2.1
         with:
           charts_dir: deploy/helm
+          
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
