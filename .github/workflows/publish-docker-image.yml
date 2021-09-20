@@ -1,14 +1,8 @@
 name: publish
 
-#on:
-#  release:
-#    types: [published]
 on:
-  push:
-    branches:
-    - master
-
-
+  release:
+    types: [published]
 
 jobs:
   push_to_registry:
