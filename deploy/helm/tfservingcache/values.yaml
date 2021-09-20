@@ -5,7 +5,7 @@ fullnameOverride: ""
 cache:
   image:
     repository: mkaloer/tfservingcache
-    tag: latest
+    tag: v0.1.0.1
     pullPolicy: IfNotPresent
   resources: {}
   ports:
