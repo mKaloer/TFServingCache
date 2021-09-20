@@ -34,7 +34,7 @@ jobs:
           context: .
           file: ./deploy/docker/Dockerfile
           push: true
-          tags: tfservingcache:${{ github.run_id }}
+          tags: mkaloer/tfservingcache:${{ github.run_id }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Replace tokens
