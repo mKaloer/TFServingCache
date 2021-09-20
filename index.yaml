@@ -1,0 +1,13 @@
+apiVersion: v1
+entries:
+  tfservingcache:
+  - apiVersion: v2
+    appVersion: "1.0"
+    created: "2021-09-20T19:51:02.587967631Z"
+    description: A Helm chart for TF Serving Cache
+    digest: 558ae4af099b340063e30b33741e56017917d57de23c4199377785f51095b2d5
+    name: tfservingcache
+    urls:
+    - https://github.com/mKaloer/TFServingCache/releases/download/tfservingcache-0.1.1/tfservingcache-0.1.1.tgz
+    version: 0.1.1
+generated: "2021-09-20T19:51:02.587975331Z"
