@@ -159,8 +159,12 @@ func (provider *S3ModelProvider) modelObjectApply(modelLocation S3Location,
 }
 
 func (provider S3ModelProvider) getKeyForModel(modelName string, modelVersion int64) S3Location {
+	modelPrefix := provider.ModelBaseDir
+	if len(modelPrefix) > 0 {
+		modelPrefix = fmt.Sprintf("%s/", modelPrefix)
+	}
 	return S3Location{
 		Bucket:    provider.Bucket,
-		KeyPrefix: fmt.Sprintf("%s/%s/%d/", provider.ModelBaseDir, modelName, modelVersion),
+		KeyPrefix: fmt.Sprintf("%s%s/%d/", modelPrefix, modelName, modelVersion),
 	}
 }
