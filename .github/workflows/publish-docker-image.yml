@@ -34,7 +34,7 @@ jobs:
           context: .
           file: ./deploy/docker/Dockerfile
           push: true
-          tags: ${{ env.GITHUB_RUN_ID }}
+          tags: ${{ GITHUB_RUN_ID }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build and push Docker image
@@ -43,7 +43,7 @@ jobs:
           context: .
           file: ./deploy/docker/Dockerfile
           push: true
-          tags: ${{ env.GITHUB_RUN_ID }}
+          tags: ${{ GITHUB_RUN_ID }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Replace tokens
@@ -51,7 +51,7 @@ jobs:
         with:
           files: '["deploy/helm/**/*.yaml"]'
         env:
-          DOCKER_TAG: ${{ env.GITHUB_RUN_ID }}
+          DOCKER_TAG: ${{ GITHUB_RUN_ID }}
 
   publish_helm_chart:
     name: Publish helm chart
