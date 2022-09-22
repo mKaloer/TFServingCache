@@ -1,6 +1,8 @@
 # TF Serving Cache
 
-TF Serving load balancer/model cache that dynamically loads and unloads models into TensorFlow Serving services on demand.
+TF Serving load balancer/model cache that dynamically loads and unloads models into TensorFlow Serving services on demand. 
+
+[An article about the project can be found here.](https://medium.com/p/d3c4bb959d56)
 
 This is a work-in-progress.
 
