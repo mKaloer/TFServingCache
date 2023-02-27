@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/taskhandler"
 	log "github.com/sirupsen/logrus"
@@ -79,65 +78,70 @@ func NewDiscoveryService() (*K8sDiscoveryService, error) {
 
 func (service *K8sDiscoveryService) RegisterService() error {
 	updaterFunc := func() error {
-		watch, err := service.K8sClient.CoreV1().Endpoints(service.Namespace).Watch(context.TODO(), metav1.ListOptions{
-			FieldSelector: service.FieldSelector,
-		})
-		if err != nil {
-			log.WithError(err).Error("Error subscribing to k8s")
-			return err
-		}
-		nodeMap := make(map[string]taskhandler.ServingService, 0)
 		for {
-			updates := <-watch.ResultChan()
-			endpoints, ok := updates.Object.(*v1.Endpoints)
+			// k8s will unregister after some time, so keep the watch in a loop
+			watch, err := service.K8sClient.CoreV1().Endpoints(service.Namespace).Watch(context.TODO(), metav1.ListOptions{
+				FieldSelector: service.FieldSelector,
+			})
+			if err != nil {
+				log.WithError(err).Error("Error subscribing to k8s")
+				return err
+			}
+			nodeMap := make(map[string]taskhandler.ServingService, 0)
+			for {
+				updates := <-watch.ResultChan()
+				endpoints, ok := updates.Object.(*v1.Endpoints)
 
-			isUpdated := false
-			if !ok {
-				log.Error("Error reading object from K8S")
-				time.Sleep(5 * time.Second)
-			} else {
-				if updates.Type == k8sWatch.Added || updates.Type == k8sWatch.Modified {
-					for _, sub := range endpoints.Subsets {
-						// Entire list of nodes is sent every time - so keep track of delta
-						nodeMap = make(map[string]taskhandler.ServingService, 0)
-						for _, addr := range sub.Addresses {
-							grpcCachePort := 0
-							httpCachePort := 0
-							for _, port := range sub.Ports {
-								if port.Name == service.grpcCachePortName {
-									grpcCachePort = int(port.Port)
-								} else if port.Name == service.httpCachePortName {
-									httpCachePort = int(port.Port)
+				isUpdated := false
+				if !ok {
+					log.Debug("Error reading object from K8S")
+					watch.Stop()
+					// Force a re-registering
+					break
+				} else {
+					if updates.Type == k8sWatch.Added || updates.Type == k8sWatch.Modified {
+						for _, sub := range endpoints.Subsets {
+							// Entire list of nodes is sent every time - so keep track of delta
+							nodeMap = make(map[string]taskhandler.ServingService, 0)
+							for _, addr := range sub.Addresses {
+								grpcCachePort := 0
+								httpCachePort := 0
+								for _, port := range sub.Ports {
+									if port.Name == service.grpcCachePortName {
+										grpcCachePort = int(port.Port)
+									} else if port.Name == service.httpCachePortName {
+										httpCachePort = int(port.Port)
+									}
 								}
-							}
 
-							nodeMap[addr.IP] = taskhandler.ServingService{
-								Host:     addr.IP,
-								GrpcPort: grpcCachePort,
-								RestPort: httpCachePort,
+								nodeMap[addr.IP] = taskhandler.ServingService{
+									Host:     addr.IP,
+									GrpcPort: grpcCachePort,
+									RestPort: httpCachePort,
+								}
+								isUpdated = true
 							}
-							isUpdated = true
 						}
+					} else if updates.Type == k8sWatch.Deleted {
+						// Endpoint deleted - no nodes available
+						nodeMap = make(map[string]taskhandler.ServingService, 0)
+						isUpdated = true
 					}
-				} else if updates.Type == k8sWatch.Deleted {
-					// Endpoint deleted - no nodes available
-					nodeMap = make(map[string]taskhandler.ServingService, 0)
-					isUpdated = true
-				}
-				if isUpdated {
-					memberList := make([]taskhandler.ServingService, 0, len(nodeMap))
-					for k := range nodeMap {
-						memberList = append(memberList, nodeMap[k])
-						log.WithFields(log.Fields{
-							"host":     k,
-							"grpcPort": nodeMap[k].GrpcPort,
-							"httpPort": nodeMap[k].RestPort,
-						}).Debug("Found node")
-					}
-					for ch := range service.ListUpdatedChans {
-						service.ListUpdatedChans[ch] <- memberList
-					}
+					if isUpdated {
+						memberList := make([]taskhandler.ServingService, 0, len(nodeMap))
+						for k := range nodeMap {
+							memberList = append(memberList, nodeMap[k])
+							log.WithFields(log.Fields{
+								"host":     k,
+								"grpcPort": nodeMap[k].GrpcPort,
+								"httpPort": nodeMap[k].RestPort,
+							}).Debug("Found node")
+						}
+						for ch := range service.ListUpdatedChans {
+							service.ListUpdatedChans[ch] <- memberList
+						}
 
+					}
 				}
 			}
 		}
