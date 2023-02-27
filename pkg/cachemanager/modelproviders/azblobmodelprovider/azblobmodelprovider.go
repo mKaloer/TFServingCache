@@ -30,7 +30,7 @@ type AZBlobModelProvider struct {
 
 func NewAZBlobModelProvider(container string, modelBaseDir string, accountName string, accountKey string) (*AZBlobModelProvider, error) {
 	containerUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, container)
-	return NewAZBlobModelProviderWithUrl(containerUrl, modelBaseDir, accountKey, accountKey)
+	return NewAZBlobModelProviderWithUrl(containerUrl, modelBaseDir, accountName, accountKey)
 }
 
 func NewAZBlobModelProviderWithUrl(containerUrl string, modelBaseDir string, accountName string, accountKey string) (*AZBlobModelProvider, error) {
