@@ -50,28 +50,28 @@ spec:
           env:
           {{- with .Values.models.provider.azBlob.secretKeyRef }}
             {{- if .containerKey }}
-            - name: modelProvider_azBlob_container
+            - name: TFSC_MODELPROVIDER_AZBLOB_CONTAINER
               valueFrom: 
                 secretKeyRef:
                   name: {{ .secretName }}
                   key: {{ .containerKey }}
             {{- end }}
             {{- if .basePathKey }}
-            - name: modelProvider_azBlob_basePath
+            - name: TFSC_MODELPROVIDER_AZBLOB_BASEPATH
               valueFrom: 
                 secretKeyRef:
                   name: {{ .secretName }}
                   key: {{ .basePathKey }}
             {{- end }}
             {{- if .accountNameKey }}
-            - name: modelProvider_azBlob_accountName
+            - name: TFSC_MODELPROVIDER_AZBLOB_ACCOUNTNAME
               valueFrom: 
                 secretKeyRef:
                   name: {{ .secretName }}
                   key: {{ .accountNameKey }}
             {{- end }}
             {{- if .accountKeyKey }}
-            - name: modelProvider_azBlob_accountKey
+            - name: TFSC_MODELPROVIDER_AZBLOB_ACCOUNTKEY
               valueFrom: 
                 secretKeyRef:
                   name: {{ .secretName }}
