@@ -52,6 +52,11 @@ data:
       grpcConfigTimeout: 10 
       grpcPredictTimeout: 60
 
+    proxy:
+      replicasPerModel: {{ .Values.models.replicasPerModel }}
+      grpcTimeout: 10
+
+
     serviceDiscovery:
       type: k8s
       k8s:

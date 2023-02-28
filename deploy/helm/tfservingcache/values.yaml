@@ -31,16 +31,17 @@ service:
     grpc: 8500
 
 models:
-  provider:
-    hostPath:
-      path: /run/desktop/mnt/host/wsl/models
-      mount: /model_repo
+  #provider:
+  #  hostPath:
+  #    path: /run/desktop/mnt/host/wsl/models
+  #    mount: /model_repo
   #   s3:
   #     bucket: foo
   #     path: models/foo/bar
   cache:
     size: 30000
     path: /model_cache
+  replicasPerModel: 2
 
 replicaCount: 2
 
