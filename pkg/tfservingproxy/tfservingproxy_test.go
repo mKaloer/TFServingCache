@@ -1,15 +1,16 @@
 package tfservingproxy
 
 import (
-	"testing"
+	"context"
 	"net"
 	"net/http"
-	"context"
-	"google.golang.org/grpc"
+	"testing"
+
 	"github.com/golang/protobuf/ptypes/wrappers"
 	pb "github.com/mKaloer/TFServingCache/proto/tensorflow/serving"
-	example "github.com/tensorflow/tensorflow/tensorflow/go/core/example"
 	log "github.com/sirupsen/logrus"
+	example "github.com/tensorflow/tensorflow/tensorflow/go/core/example"
+	"google.golang.org/grpc"
 )
 
 type httpMockServer struct {
@@ -21,7 +22,6 @@ type grpcMockServer struct {
 	proxyServer *GrpcProxy
 	modelServer *grpc.Server
 }
-
 
 func setupHttpTestCache(proxyCallback func(modelName string, version string), modelCallback func()) *httpMockServer {
 	handlerMock := func(req *http.Request, modelName string, version string) error {
@@ -35,7 +35,6 @@ func setupHttpTestCache(proxyCallback func(modelName string, version string), mo
 
 	proxyHandler := http.NewServeMux()
 	proxyHandler.HandleFunc("/", proxy.Serve())
-	
 
 	proxyServer := &http.Server{Addr: ":8088", Handler: proxyHandler}
 	go func() {
@@ -43,7 +42,6 @@ func setupHttpTestCache(proxyCallback func(modelName string, version string), mo
 			log.Fatalf("Err: %v", err)
 		}
 	}()
-
 
 	modelServerHandler := http.NewServeMux()
 
@@ -80,7 +78,7 @@ func setupGrpcTestCache(proxyCallback func(modelName string, version string), mo
 	go func() {
 		modelServer.Serve(lis)
 	}()
-	
+
 	handlerMock := func(modelName string, version string) (*grpc.ClientConn, error) {
 		proxyCallback(modelName, version)
 		// No connection exists - swap to write lock and connect
@@ -109,7 +107,6 @@ func (m *grpcMockServer) shutdown() {
 	m.proxyServer.Close()
 	m.modelServer.GracefulStop()
 }
-
 
 func TestHttpProxyParsesUrl(t *testing.T) {
 	modelHandlerCalled := false
@@ -142,7 +139,6 @@ func TestHttpProxyParsesUrl(t *testing.T) {
 	}
 }
 
-
 func TestHttpProxyInvalidUrlCausesErr(t *testing.T) {
 	modelHandlerCalled := false
 	proxyCallback := func(modelName string, version string) {
@@ -159,7 +155,7 @@ func TestHttpProxyInvalidUrlCausesErr(t *testing.T) {
 	}
 
 	mockServer.shutdown()
-	
+
 	if resp.StatusCode != 404 {
 		t.Errorf("Expected status code 404 on invalid url")
 	}
@@ -189,7 +185,7 @@ func TestHttpProxyNoVersionCodeCausesErr(t *testing.T) {
 	}
 
 	mockServer.shutdown()
-	
+
 	if resp.StatusCode != 400 {
 		t.Errorf("Expected status code 400 on missing version url")
 	}
@@ -202,7 +198,6 @@ func TestHttpProxyNoVersionCodeCausesErr(t *testing.T) {
 		t.Errorf("Model server called on bad url")
 	}
 }
-
 
 func TestGrpcProxyParsesRequest(t *testing.T) {
 	modelHandlerCalled := false
@@ -228,7 +223,6 @@ func TestGrpcProxyParsesRequest(t *testing.T) {
 	mockServer := setupGrpcTestCache(proxyCallback, modelServerCallback)
 	sendGrpcModelRequest("foobar", 42)
 
-	
 	mockServer.shutdown()
 	if !modelHandlerCalled {
 		t.Errorf("Model handler (proxy) not called")
@@ -263,12 +257,11 @@ func sendGrpcModelRequest(modelName string, version int64) {
 				},
 			},
 		})
-	
+
 	if err != nil {
 		log.WithError(err).Panicf("Error classifying")
 	}
 }
-
 
 type mockProxyServiceServer struct {
 	modelServerCallback func(modelName string, modelVersion int64)
@@ -285,6 +278,7 @@ func (server *mockProxyServiceServer) Classify(ctx context.Context, req *pb.Clas
 		},
 	}, nil
 }
+
 // Regress.
 func (server *mockProxyServiceServer) Regress(ctx context.Context, req *pb.RegressionRequest) (*pb.RegressionResponse, error) {
 	return nil, nil
