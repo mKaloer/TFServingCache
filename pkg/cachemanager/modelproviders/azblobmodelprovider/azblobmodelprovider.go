@@ -75,18 +75,19 @@ func (provider AZBlobModelProvider) LoadModel(modelName string, modelVersion int
 		err := os.MkdirAll(objFolder, 0777)
 		if err != nil {
 			log.WithError(err).Errorf("Could not create object dir: %s", objFolder)
-			return nil
+			return err
 		}
 		fname := path.Join(destPath, relativeName)
 		f, err := os.Create(fname)
 		if err != nil {
 			log.WithError(err).Errorf("Could not create object file: %s", fname)
-			return nil
+			return err
 		}
+
 		err = azblob.DownloadBlobToFile(context.Background(), azblob.NewBlobURL(*url, provider.pipeline), 0, 0, f, azblob.DownloadFromBlobOptions{})
 		if err != nil {
 			log.WithError(err).Errorf("Could not download object file: %s", fname)
-			return nil
+			return err
 		}
 		totalSize += *blob.Properties.ContentLength
 		return nil
@@ -124,7 +125,9 @@ func (provider *AZBlobModelProvider) modelObjectApply(modelLocation AZBlobLocati
 	applyFun func(string, *azblob.BlobItemInternal, *url.URL) error) error {
 	containerURL := azblob.NewContainerURL(*provider.ContainerURL, provider.pipeline)
 	ctx := context.Background()
+
 	// List all blobs matching prefix
+	numBlobs := 0
 	for marker := (azblob.Marker{}); marker.NotDone(); {
 		// Fetch next segment
 		blobs, err := containerURL.ListBlobsFlatSegment(ctx, marker, azblob.ListBlobsSegmentOptions{Prefix: modelLocation.KeyPrefix})
@@ -132,7 +135,7 @@ func (provider *AZBlobModelProvider) modelObjectApply(modelLocation AZBlobLocati
 			log.WithError(err).Errorf("Could not list blobs: %s", modelLocation.KeyPrefix)
 			return err
 		}
-
+		numBlobs += len(blobs.Segment.BlobItems)
 		for _, blobInfo := range blobs.Segment.BlobItems {
 			// Blob Name
 			log.Debugf("Blob name: %s", blobInfo.Name)
@@ -149,6 +152,9 @@ func (provider *AZBlobModelProvider) modelObjectApply(modelLocation AZBlobLocati
 			}
 		}
 		marker = blobs.NextMarker
+	}
+	if numBlobs == 0 {
+		return fmt.Errorf("Model not found: %s", modelLocation.KeyPrefix)
 	}
 
 	return nil

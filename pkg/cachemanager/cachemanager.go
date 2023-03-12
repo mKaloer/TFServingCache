@@ -108,14 +108,22 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			return err
 		}
 		cache.LocalCache.Put(identifier, *model)
-		cache.reloadServingConfig(*model)
+		err = cache.reloadServingConfig(*model)
+		if err != nil {
+			log.WithError(err).Error("Error while loading model")
+			return err
+		}
 	} else if state, err := cache.ServingController.GetModelStatus(model); err != nil ||
 		state == ModelVersionStatus_UNLOADING ||
 		state == ModelVersionStatus_END {
 		// Model in disk cache but not loaded in serving
 		cache.rwMux.Lock()
 		defer cache.rwMux.Unlock()
-		cache.reloadServingConfig(model)
+		err = cache.reloadServingConfig(model)
+		if err != nil {
+			log.WithError(err).Error("Error while loading model")
+			return err
+		}
 	} else {
 		if viper.GetBool("metrics.modelLabels") {
 			promCacheHits.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
@@ -155,6 +163,8 @@ func (cache *CacheManager) reloadServingConfig(requestedModel Model) error {
 		} else if status == ModelVersionStatus_AVAILABLE {
 			log.Info("Model available")
 			break
+		} else if status == ModelVersionStatus_END {
+			log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
 		} else {
 			log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
 		}
@@ -235,7 +245,6 @@ func (cache *CacheManager) restDirector(req *http.Request, modelName string, ver
 	err := cache.handleModelRequest(modelName, version)
 	if err != nil {
 		log.WithError(err).Errorf("Error handling request. Aborting: %s", req.URL.String())
-		req.Response.StatusCode = 500
 		return fmt.Errorf("Error handling request. Aborting: %s, %w", req.URL.String(), err)
 	}
 	localURL := cache.localRestURL
