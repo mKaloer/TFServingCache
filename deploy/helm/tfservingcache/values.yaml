@@ -1,6 +1,7 @@
 # Default values for tfservingcache.
 nameOverride: ""
 fullnameOverride: ""
+serviceAccountNameOverride: ""
 
 cache:
   image:

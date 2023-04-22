@@ -49,3 +49,14 @@ Selector labels
 app.kubernetes.io/name: {{ include "tfservingcache.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Service account name
+*/}}
+{{- define "tfservingcache.serviceAccountName" -}}
+{{- if .Values.serviceAccountNameOverride -}}
+{{- .Values.serviceAccountNameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{ include "tfservingcache.fullname" . }}
+{{- end }}
+{{- end }}
