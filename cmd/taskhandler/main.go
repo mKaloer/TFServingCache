@@ -32,15 +32,12 @@ func main() {
 		defer taskHandler.Close()
 	}
 	for {
-		log.Info("Cache is healthy: ", cache.IsHealthy())
 		isHealthy := cache.IsHealthy()
-
 		cache.GrpcProxy.SetHealth(isHealthy)
 		if taskHandler != nil {
 			taskHandler.GrpcProxy.SetHealth(isHealthy)
 		}
-
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 30)
 	}
 }
 
