@@ -36,19 +36,38 @@ spec:
               name: http-cache
             - containerPort: {{ .Values.cache.ports.cacheGrpc }}
               name: grpc-cache
+          livenessProbe:
+            grpc:
+              port: {{ .Values.cache.ports.proxyGrpc }}
+            initialDelaySeconds: 10
+            timeoutSeconds: 60
+            periodSeconds: 60
+          startupProbe:
+            grpc:
+              port: {{ .Values.cache.ports.proxyGrpc }}
+            periodSeconds: 30
+            timeoutSeconds: 60
+          readinessProbe:
+            grpc:
+              port: {{ .Values.cache.ports.proxyGrpc }}
+            timeoutSeconds: 60
+            initialDelaySeconds: 5
           volumeMounts:
             - name: cache-config
               mountPath: /tfservingcache/config.yaml
               subPath: config.yaml
-          {{- with .Values.models.provider.hostPath }}              
+          {{- with .Values.models.provider.hostPath }}
+          {{- if .mount }}              
             - name: models
               mountPath: {{ .mount }}
+           {{- end }}   
           {{- end }}
             - name: cache
               mountPath: {{ .Values.models.cache.path }}
           resources:
             {{- toYaml .Values.cache.resources | nindent 12 }}
           env:
+          {{- if .Values.models.provider.azBlob }}
           {{- with .Values.models.provider.azBlob.secretKeyRef }}
             {{- if .containerKey }}
             - name: TFSC_MODELPROVIDER_AZBLOB_CONTAINER
@@ -78,6 +97,7 @@ spec:
                   name: {{ .secretName }}
                   key: {{ .accountKeyKey }}
             {{- end }}
+          {{- end }}
           {{- end }}
         - name: "serving"
           image: "{{ .Values.serving.image.repository }}:{{ .Values.serving.image.tag }}"
