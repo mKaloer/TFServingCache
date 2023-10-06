@@ -168,3 +168,13 @@ func (provider S3ModelProvider) getKeyForModel(modelName string, modelVersion in
 		KeyPrefix: fmt.Sprintf("%s%s/%d/", modelPrefix, modelName, modelVersion),
 	}
 }
+
+func (provider S3ModelProvider) Check() bool {
+	maxKeys := int64(1)
+	_, err := provider.s3.ListObjectsV2(&s3.ListObjectsV2Input{Bucket: &provider.Bucket, MaxKeys: &maxKeys})
+	if err != nil {
+		log.WithError(err).Errorf("Error accessing model on S3. Bucket: %s", provider.Bucket)
+		return false
+	}
+	return true
+}

@@ -81,3 +81,7 @@ func (provider DiskModelProvider) ModelSize(modelName string, modelVersion int64
 	size := fi.Size()
 	return size, nil
 }
+
+func (provider DiskModelProvider) Check() bool {
+	return true
+}
