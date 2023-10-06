@@ -31,6 +31,7 @@ func main() {
 	if taskHandler != nil {
 		defer taskHandler.Close()
 	}
+	// Run health checks
 	for {
 		isHealthy := cache.IsHealthy()
 		cache.GrpcProxy.SetHealth(isHealthy)

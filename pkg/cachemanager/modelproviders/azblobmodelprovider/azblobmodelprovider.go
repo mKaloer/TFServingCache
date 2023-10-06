@@ -172,6 +172,7 @@ func (provider AZBlobModelProvider) getKeyForModel(modelName string, modelVersio
 }
 
 func (provider AZBlobModelProvider) Check() bool {
+	// Call list blob resource to check blob health
 	containerURL := azblob.NewContainerURL(*provider.ContainerURL, provider.pipeline)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

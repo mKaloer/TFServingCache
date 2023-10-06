@@ -82,6 +82,7 @@ func (cache *CacheManager) IsHealthy() bool {
 			return false
 		}
 	}
+	// Check if model provider is healthy
 	modelProviderIsHealthy := cache.ModelProvider.Check()
 	return modelProviderIsHealthy
 }

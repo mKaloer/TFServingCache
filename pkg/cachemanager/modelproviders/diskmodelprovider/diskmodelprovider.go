@@ -83,5 +83,6 @@ func (provider DiskModelProvider) ModelSize(modelName string, modelVersion int64
 }
 
 func (provider DiskModelProvider) Check() bool {
+	// Assume that disk is always healthy
 	return true
 }
