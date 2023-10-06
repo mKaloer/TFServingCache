@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"strconv"
 
+	"google.golang.org/grpc/health"
+	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
+
 	pb "github.com/mKaloer/TFServingCache/proto/tensorflow/serving"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -39,9 +42,10 @@ type RestProxy struct {
 // GrpcProxy is the proxy for the TFServing GRPC api that directs
 // api calls to the right nodes
 type GrpcProxy struct {
-	GrpcProxy  *grpc.Server
-	serverImpl *proxyServiceServer
-	listener   net.Listener
+	GrpcProxy   *grpc.Server
+	serverImpl  *proxyServiceServer
+	listener    net.Listener
+	healthcheck *health.Server
 }
 
 // NewRestProxy creates a new RestProxy for TF Serving
@@ -77,7 +81,8 @@ func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.C
 	}
 
 	proxy := GrpcProxy{
-		serverImpl: &server,
+		serverImpl:  &server,
+		healthcheck: health.NewServer(),
 	}
 	return &proxy
 }
@@ -131,8 +136,19 @@ func (proxy *GrpcProxy) Listen(port int) error {
 	proxy.listener = lis
 	pb.RegisterPredictionServiceServer(proxy.GrpcProxy, proxy.serverImpl)
 	pb.RegisterSessionServiceServer(proxy.GrpcProxy, proxy.serverImpl)
+
+	healthgrpc.RegisterHealthServer(proxy.GrpcProxy, proxy.healthcheck)
+
 	proxy.GrpcProxy.Serve(lis)
 	return nil
+}
+
+func (proxy *GrpcProxy) SetHealth(isHealthy bool) {
+	if isHealthy {
+		proxy.healthcheck.SetServingStatus("", healthgrpc.HealthCheckResponse_SERVING)
+	} else {
+		proxy.healthcheck.SetServingStatus("", healthgrpc.HealthCheckResponse_NOT_SERVING)
+	}
 }
 
 // Close stops the grpc proxy ser

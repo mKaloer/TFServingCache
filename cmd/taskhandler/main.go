@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager/modelproviders/azblobmodelprovider"
@@ -20,15 +21,30 @@ func main() {
 
 	SetConfig()
 
-	cleanup := serveCache()
-	defer cleanup()
+	cache := serveCache()
+	defer cache.GrpcProxy.Close()
 
-	serveProxy()
+	taskHandler, err := serveProxy()
+	if err != nil {
+		log.WithError(err).Fatal("Could not start proxy")
+	}
+	if taskHandler != nil {
+		defer taskHandler.Close()
+	}
+	for {
+		log.Info("Cache is healthy: ", cache.IsHealthy())
+		isHealthy := cache.IsHealthy()
 
-	log.Info("Server stopped")
+		cache.GrpcProxy.SetHealth(isHealthy)
+		if taskHandler != nil {
+			taskHandler.GrpcProxy.SetHealth(isHealthy)
+		}
+
+		time.Sleep(time.Second * 5)
+	}
 }
 
-func serveCache() func() error {
+func serveCache() *cachemanager.CacheManager {
 
 	var (
 		restPort = viper.GetInt("cacheRestPort")
@@ -46,10 +62,10 @@ func serveCache() func() error {
 
 	go cache.GrpcProxy.Listen(grpcPort)
 
-	return cache.GrpcProxy.Close
+	return cache
 }
 
-func serveProxy() {
+func serveProxy() (*taskhandler.TaskHandler, error) {
 
 	var (
 		restPort = viper.GetInt("proxyRestPort")
@@ -70,17 +86,17 @@ func serveProxy() {
 	proxyMux := http.NewServeMux()
 
 	dService := CreateDiscoveryService()
+	var tHandler *taskhandler.TaskHandler
 	if dService != nil {
 
-		tHandler := taskhandler.NewTaskHandler(dService)
+		tHandler = taskhandler.NewTaskHandler(dService)
 		err := tHandler.ConnectToCluster()
 		if err != nil {
 			log.WithError(err).Fatal("Could not connect to cluster")
+			return nil, err
 		}
-		defer tHandler.DisconnectFromCluster()
 
 		go tHandler.GrpcProxy.Listen(grpcPort)
-		defer tHandler.GrpcProxy.Close()
 
 		proxyMux.HandleFunc("/v1/models/", tHandler.ServeRest())
 
@@ -94,7 +110,8 @@ func serveProxy() {
 
 	log.Infof("Metrics are available at %v:%v", restPort, metricsPath)
 
-	http.ListenAndServe(fmt.Sprintf(":%d", restPort), proxyMux)
+	go http.ListenAndServe(fmt.Sprintf(":%d", restPort), proxyMux)
+	return tHandler, nil
 }
 
 func CreateCacheManager() *cachemanager.CacheManager {
@@ -117,9 +134,9 @@ func CreateDiscoveryService() taskhandler.DiscoveryService {
 		var err error = nil
 		switch viper.GetString("serviceDiscovery.type") {
 		case "consul":
-			dService, err = consul.NewDiscoveryService(healthCheck)
+			dService, err = consul.NewDiscoveryService(isHealthy)
 		case "etcd":
-			dService, err = etcd.NewDiscoveryService(healthCheck)
+			dService, err = etcd.NewDiscoveryService(isHealthy)
 		case "k8s":
 			dService, err = kubernetes.NewDiscoveryService()
 		default:
@@ -171,7 +188,7 @@ func CreateModelProvider() cachemanager.ModelProvider {
 	return mProvider
 }
 
-func healthCheck() (bool, error) {
+func isHealthy() (bool, error) {
 	// TODO: Implement a health check. Also expose via http
 	return true, nil
 }

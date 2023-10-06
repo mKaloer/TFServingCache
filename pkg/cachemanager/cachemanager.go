@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/status"
 )
 
 var promCacheTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -69,6 +70,20 @@ type CacheManager struct {
 
 func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request) {
 	return handler.RestProxy.Serve()
+}
+
+func (cache *CacheManager) IsHealthy() bool {
+	// Check if serving is healthy. Only way we know how is to ask for model status on a model that does not exist
+	_, err := cache.ServingController.GetModelStatus(Model{Identifier: ModelIdentifier{ModelName: "__TFSERVINGCACHE_PROBE_CHECK__", Version: 1}})
+	if err != nil {
+		st, _ := status.FromError(err)
+		// Check if st is NOTFOUND
+		if st.Code() != 5 {
+			return false
+		}
+	}
+	modelProviderIsHealthy := cache.ModelProvider.Check()
+	return modelProviderIsHealthy
 }
 
 func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
