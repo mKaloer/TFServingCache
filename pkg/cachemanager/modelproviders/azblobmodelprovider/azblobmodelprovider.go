@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -168,4 +169,18 @@ func (provider AZBlobModelProvider) getKeyForModel(modelName string, modelVersio
 	return AZBlobLocation{
 		KeyPrefix: fmt.Sprintf("%s%s/%d/", modelPrefix, modelName, modelVersion),
 	}
+}
+
+func (provider AZBlobModelProvider) Check() bool {
+	// Call list blob resource to check blob health
+	containerURL := azblob.NewContainerURL(*provider.ContainerURL, provider.pipeline)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	marker := azblob.Marker{}
+	_, err := containerURL.ListBlobsFlatSegment(ctx, marker, azblob.ListBlobsSegmentOptions{MaxResults: 1})
+	if err != nil {
+		log.WithError(err).Errorf("Could not list blobs")
+		return false
+	}
+	return true
 }
