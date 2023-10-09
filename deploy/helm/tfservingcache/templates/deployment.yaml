@@ -99,6 +99,8 @@ spec:
             {{- end }}
           {{- end }}
           {{- end }}
+            - name: TFSC_HEALTHPROBE_MODELNAME
+              value: {{ .Values.healthProbe.modelName }}
         - name: "serving"
           image: "{{ .Values.serving.image.repository }}:{{ .Values.serving.image.tag }}"
           imagePullPolicy: {{ .Values.serving.image.pullPolicy }}

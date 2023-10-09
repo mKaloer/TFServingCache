@@ -17,9 +17,10 @@ import (
 )
 
 type TFServingController struct {
-	grpcHost   string
-	restHost   string
-	grpcClient *grpc.ClientConn
+	grpcHost             string
+	restHost             string
+	grpcClient           *grpc.ClientConn
+	healthProbeModelName string
 }
 
 /*
@@ -54,8 +55,9 @@ const (
 
 func NewTFServingController(grpcHost string, restHost string) (*TFServingController, error) {
 	controller := &TFServingController{
-		grpcHost: grpcHost,
-		restHost: restHost,
+		grpcHost:             grpcHost,
+		restHost:             restHost,
+		healthProbeModelName: viper.GetString("healthprobe.modelName"),
 	}
 
 	// Connect to serving
@@ -104,7 +106,6 @@ func (server *TFServingController) ReloadConfig(models []*Model, tfServingServer
 }
 
 func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStatus_State, error) {
-
 	client := serving.NewModelServiceClient(server.grpcClient)
 
 	log.Debug("Getting TF model status...")
@@ -115,7 +116,10 @@ func (server *TFServingController) GetModelStatus(model Model) (ModelVersionStat
 	}
 	resp, err := client.GetModelStatus(context.Background(), statusRequest)
 	if err != nil {
-		log.WithError(err).Error("Error getting tf serving model status")
+		// We suppress the log when retrieving model status for the healthcheck model.
+		if model.Identifier.ModelName != server.healthProbeModelName {
+			log.WithError(err).Error("Error getting tf serving model status")
+		}
 		return 0, err
 	}
 
