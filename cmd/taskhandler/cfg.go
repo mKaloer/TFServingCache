@@ -11,6 +11,7 @@ func SetConfig() {
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
 	viper.SetConfigType("yaml")
+	setDefaults()
 	viper.SetEnvPrefix("tfsc")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
@@ -47,4 +48,8 @@ func SetConfig() {
 		log.SetLevel(log.InfoLevel)
 	}
 
+}
+
+func setDefaults() {
+	viper.SetDefault("healthprobe.modelName", "__TFSERVINGCACHE_PROBE_CHECK__")
 }
