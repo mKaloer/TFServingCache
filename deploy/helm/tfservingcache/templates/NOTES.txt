@@ -11,5 +11,3 @@ kubectl get pods -l "app.kubernetes.io/name={{ include "tfservingcache.name" . }
   echo "Visit http://127.0.0.1:8080 or grpc://127.0.0.1:8081 to use your application"
   kubectl port-forward $POD_NAME 8080:{{ .Values.cache.ports.proxyHttp }} 8081:{{ .Values.cache.ports.proxyGrpc }}
 {{- end }}
-
-3. Please be patient, the readiness probe is not implemented yet.
