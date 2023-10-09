@@ -66,6 +66,7 @@ type CacheManager struct {
 	ServingController            *TFServingController
 	ModelFetchTimeout            float32 // model fetch timeout in seconds
 	rwMux                        sync.RWMutex
+	healthProbeModelName         string
 }
 
 func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request) {
@@ -74,7 +75,7 @@ func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request
 
 func (cache *CacheManager) IsHealthy() bool {
 	// Check if serving is healthy. Only way we know how is to ask for model status on a model that does not exist
-	_, err := cache.ServingController.GetModelStatus(Model{Identifier: ModelIdentifier{ModelName: "__TFSERVINGCACHE_PROBE_CHECK__", Version: 1}})
+	_, err := cache.ServingController.GetModelStatus(Model{Identifier: ModelIdentifier{ModelName: cache.healthProbeModelName, Version: 1}})
 	if err != nil {
 		st, _ := status.FromError(err)
 		// Check if st is NOTFOUND
@@ -224,6 +225,7 @@ func New(
 		TFServingServerModelBasePath: tfServingServerBasePath,
 		ModelFetchTimeout:            modelFetchTimeout,
 		MaxConcurrentModels:          maxConcurrentModels,
+		healthProbeModelName:         viper.GetString("healthprobe.modelName"),
 	}
 	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
 	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
