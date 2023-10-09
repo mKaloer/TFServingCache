@@ -44,6 +44,9 @@ models:
     path: /model_cache
   replicasPerModel: 2
 
+healthProbe:
+  modelName: __TFSERVINGCACHE_PROBE_CHECK__
+
 replicaCount: 2
 
 imagePullSecrets: []
