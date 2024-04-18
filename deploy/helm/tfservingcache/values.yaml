@@ -24,6 +24,7 @@ serving:
   ports:
     http: 8501
     grpc: 8500
+  grpcMaxMsgSize: 16777216
 
 service:
   type: ClusterIP
@@ -58,3 +59,7 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+logging:
+  level: info
+  format: text

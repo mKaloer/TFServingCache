@@ -227,14 +227,20 @@ func New(
 		MaxConcurrentModels:          maxConcurrentModels,
 		healthProbeModelName:         viper.GetString("healthprobe.modelName"),
 	}
+	maxGrpcMsgSize := viper.GetInt("serving.grpcMaxMsgSize")
+	if maxGrpcMsgSize == 0 {
+		maxGrpcMsgSize = 16 * 1024 * 1024
+	}
 	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
-	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
+	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector, maxGrpcMsgSize)
 
 	// Create new grpc client
 	localConn, err := grpc.Dial(h.localGrpcURL,
 		grpc.WithInsecure(),
 		grpc.WithTimeout(viper.GetDuration("proxy.grpcTimeout")*time.Second),
-		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGrpcMsgSize), grpc.MaxCallSendMsgSize(maxGrpcMsgSize)),
+	)
 
 	if err != nil {
 		log.WithError(err).Error("Could not create grpc connection to tfserving")

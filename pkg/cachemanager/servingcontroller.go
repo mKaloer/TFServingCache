@@ -60,11 +60,17 @@ func NewTFServingController(grpcHost string, restHost string) (*TFServingControl
 		healthProbeModelName: viper.GetString("healthprobe.modelName"),
 	}
 
+	maxGrpcMsgSize := viper.GetInt("serving.grpcMaxMsgSize")
+	if maxGrpcMsgSize == 0 {
+		maxGrpcMsgSize = 16 * 1024 * 1024
+	}
 	// Connect to serving
 	client, err := grpc.Dial(grpcHost,
 		grpc.WithInsecure(),
 		grpc.WithTimeout(viper.GetDuration("serving.grpcConfigTimeout")*time.Second),
-		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGrpcMsgSize), grpc.MaxCallSendMsgSize(maxGrpcMsgSize)),
+	)
 
 	if err != nil {
 		log.WithError(err).Error("Could not connect to TF serving GRPC")

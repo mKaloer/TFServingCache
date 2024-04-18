@@ -42,10 +42,11 @@ type RestProxy struct {
 // GrpcProxy is the proxy for the TFServing GRPC api that directs
 // api calls to the right nodes
 type GrpcProxy struct {
-	GrpcProxy   *grpc.Server
-	serverImpl  *proxyServiceServer
-	listener    net.Listener
-	healthcheck *health.Server
+	GrpcProxy      *grpc.Server
+	serverImpl     *proxyServiceServer
+	listener       net.Listener
+	healthcheck    *health.Server
+	maxGrpcMsgSize int
 }
 
 // NewRestProxy creates a new RestProxy for TF Serving
@@ -72,7 +73,7 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 }
 
 // NewGrpcProxy creates a new GrpcProxy for TF Serving
-func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.ClientConn, error)) *GrpcProxy {
+func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.ClientConn, error), maxGrpcMsgSize int) *GrpcProxy {
 	promRequestsTotal.WithLabelValues("grpc")
 	promRequestsFailed.WithLabelValues("grpc")
 
@@ -81,8 +82,9 @@ func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.C
 	}
 
 	proxy := GrpcProxy{
-		serverImpl:  &server,
-		healthcheck: health.NewServer(),
+		serverImpl:     &server,
+		healthcheck:    health.NewServer(),
+		maxGrpcMsgSize: maxGrpcMsgSize,
 	}
 	return &proxy
 }
@@ -128,7 +130,10 @@ func (handler *RestProxy) Serve() func(http.ResponseWriter, *http.Request) {
 
 // Listen starts the grpc server that proxies TF serving GRPC api calls
 func (proxy *GrpcProxy) Listen(port int) error {
-	proxy.GrpcProxy = grpc.NewServer()
+	proxy.GrpcProxy = grpc.NewServer(
+		grpc.MaxRecvMsgSize(proxy.maxGrpcMsgSize),
+		grpc.MaxSendMsgSize(proxy.maxGrpcMsgSize),
+	)
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return err
