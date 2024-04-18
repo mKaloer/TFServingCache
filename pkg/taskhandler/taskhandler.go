@@ -22,6 +22,7 @@ type TaskHandler struct {
 	RestProxy       *tfservingproxy.RestProxy
 	GrpcProxy       *tfservingproxy.GrpcProxy
 	grpcConnections *grpcConnMap
+	maxGrpcMsgSize  int
 }
 
 type grpcConnMap struct {
@@ -36,14 +37,19 @@ func (handler *TaskHandler) ServeRest() func(http.ResponseWriter, *http.Request)
 
 // NewTaskHandler creates a new TaskHandler
 func NewTaskHandler(dService DiscoveryService) *TaskHandler {
+	maxGrpcMsgSize := viper.GetInt("serving.grpcMaxMsgSize")
+	if maxGrpcMsgSize == 0 {
+		maxGrpcMsgSize = 16 * 1024 * 1024
+	}
 	h := &TaskHandler{
-		Cluster: NewClusterConnection(dService),
+		Cluster:        NewClusterConnection(dService),
+		maxGrpcMsgSize: maxGrpcMsgSize,
 	}
 
 	rand.Seed(time.Now().UnixNano())
 
 	h.RestProxy = tfservingproxy.NewRestProxy(h.restDirector)
-	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector)
+	h.GrpcProxy = tfservingproxy.NewGrpcProxy(h.grpcDirector, maxGrpcMsgSize)
 	h.grpcConnections = &grpcConnMap{ConnMap: make(map[string]*grpc.ClientConn)}
 	return h
 }
@@ -130,7 +136,9 @@ func (handler *TaskHandler) grpcDirector(modelName string, version string) (*grp
 	conn, err := grpc.Dial(grpcHost,
 		grpc.WithInsecure(),
 		grpc.WithTimeout(viper.GetDuration("serving.grpcPredictTimeout")*time.Second),
-		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}))
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.DefaultConfig}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(handler.maxGrpcMsgSize), grpc.MaxCallSendMsgSize(handler.maxGrpcMsgSize)),
+	)
 	if err == nil {
 		handler.grpcConnections.ConnMap[grpcHost] = conn
 	}

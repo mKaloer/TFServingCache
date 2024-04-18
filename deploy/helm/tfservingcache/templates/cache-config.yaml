@@ -5,9 +5,15 @@ metadata:
   labels: {{- include "tfservingcache.labels" . | nindent 4}}
 data:
   config.yaml: |
-    {{- if .Values.logLevel }}
-    logLevel: {{ .Values.logLevel }}
-    {{- end }}
+    logging:
+      {{- if .Values.logging.level }}
+      level: {{ .Values.logging.level }}
+      {{- else }}
+      level: info
+      {{- end }}
+      {{- if .Values.logging.format }}
+      format: {{ .Values.logging.format }}
+      {{- end }}
 
     proxyRestPort: {{ .Values.cache.ports.proxyHttp }}
     proxyGrpcPort: {{ .Values.cache.ports.proxyGrpc }}
@@ -51,6 +57,7 @@ data:
       maxConcurrentModels: 2
       grpcConfigTimeout: 10 
       grpcPredictTimeout: 60
+      grpcMaxMsgSize: {{ default 16777216 .Values.serving.grpcMaxMsgSize  }}
 
     proxy:
       replicasPerModel: {{ .Values.models.replicasPerModel }}

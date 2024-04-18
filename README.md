@@ -50,6 +50,7 @@ In order to identify which TF Serving service that should provide a model, TF Se
 | `serving.maxConcurrentModels`                  | int         |                                  | The number of models to be serving simultaneously                                    |
 | `serving.grpcConfigTimeout`                    | int         |                                  | gRPC config timeout in seconds                                                       |
 | `serving.grpcPredictTimeout`                   | int         |                                  | gRPC prediction timeout in seconds                                                   |
+| `serving.grpcMaxMsgSize`                       | int         |                                  | Max message size for gRPC requests in bytes                                          |
 | `serving.metricsPath`                          | string      | `metrics.path`                   | Path to TF Serving metrics                                                           |
 | `proxy.replicasPerModel`                       | int         |                                  | The number of nodes that should serve each model                                     |
 | `proxy.grpcTimeout`                            | int         |                                  | Timeout for the gRPC proxy                                                           |

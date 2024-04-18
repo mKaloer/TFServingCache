@@ -76,6 +76,13 @@ spec:
                   name: {{ .secretName }}
                   key: {{ .containerKey }}
             {{- end }}
+            {{- if .containerUrlKey }}
+            - name: TFSC_MODELPROVIDER_AZBLOB_CONTAINERURL
+              valueFrom: 
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: {{ .containerUrlKey }}
+            {{- end }}
             {{- if .basePathKey }}
             - name: TFSC_MODELPROVIDER_AZBLOB_BASEPATH
               valueFrom: 
@@ -105,16 +112,16 @@ spec:
           image: "{{ .Values.serving.image.repository }}:{{ .Values.serving.image.tag }}"
           imagePullPolicy: {{ .Values.serving.image.pullPolicy }}
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - >
-              echo 'model_config_list {}' > /models/models.config \
-              && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > /models/monitoring.config \
+              echo 'model_config_list {}' > models.config \
+              && echo 'prometheus_config { enable: true, path: "/monitoring/prometheus/metrics" }' > monitoring.config \
               && /usr/bin/tensorflow_model_server \
                 --port={{ .Values.serving.ports.grpc }} \
                 --rest_api_port={{ .Values.serving.ports.http }} \
-                --model_config_file=/models/models.config \
-                --monitoring_config_file=/models/monitoring.config
+                --model_config_file=models.config \
+                --monitoring_config_file=monitoring.config
           volumeMounts:
             - name: cache
               mountPath: {{ .Values.models.cache.path }}

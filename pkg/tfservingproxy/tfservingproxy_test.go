@@ -90,7 +90,7 @@ func setupGrpcTestCache(proxyCallback func(modelName string, version string), mo
 		return conn, err
 	}
 
-	grpcProxy := NewGrpcProxy(handlerMock)
+	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
 	go func() {
 		if err := grpcProxy.Listen(8890); err != nil {
 			log.Fatalf("Err: %v", err)

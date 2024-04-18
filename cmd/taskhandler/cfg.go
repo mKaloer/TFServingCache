@@ -25,7 +25,18 @@ func SetConfig() {
 		}
 	}
 
-	logLevel := viper.GetString("logLevel")
+	logLevel := viper.GetString("logging.level")
+	logFormat := viper.GetString("logging.format")
+	switch logFormat {
+	case "json":
+		log.SetFormatter(&log.JSONFormatter{})
+		break
+	case "text":
+		log.SetFormatter(&log.TextFormatter{})
+		break
+	default:
+		log.SetFormatter(&log.TextFormatter{})
+	}
 
 	log.Infof("Log Level: %v", logLevel)
 
