@@ -1,4 +1,4 @@
-FROM golang:1.22.2 as builder
+FROM golang:1.23.1 AS builder
 
 WORKDIR $GOPATH/github.com/mKaloer/TFServingCache
 
@@ -13,7 +13,7 @@ COPY . .
 # Build
 RUN CGO_ENABLED=0 go build -a -o ./bin/taskhandler ./cmd/taskhandler/
 
-FROM alpine:3.12
+FROM alpine:3.20.3
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /tfservingcache/
