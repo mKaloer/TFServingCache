@@ -3,6 +3,15 @@ entries:
   tfservingcache:
   - apiVersion: v2
     appVersion: "1.0"
+    created: "2025-02-03T13:10:21.925179618Z"
+    description: A Helm chart for TF Serving Cache
+    digest: 98e49f6c3ac5b7ecf471dab2852f9d92378726a8d7bbaf50c5f4acaad4053724
+    name: tfservingcache
+    urls:
+    - https://github.com/mKaloer/TFServingCache/releases/download/tfservingcache-0.1.9/tfservingcache-0.1.9.tgz
+    version: 0.1.9
+  - apiVersion: v2
+    appVersion: "1.0"
     created: "2024-09-29T11:30:09.93891025Z"
     description: A Helm chart for TF Serving Cache
     digest: df322841651015a24cac0c4fb6c5f27525dd0655c87643aa34e745f08c920d4c
@@ -46,4 +55,4 @@ entries:
     urls:
     - https://github.com/mKaloer/TFServingCache/releases/download/tfservingcache-0.1.1/tfservingcache-0.1.1.tgz
     version: 0.1.1
-generated: "2024-09-29T11:30:09.938932201Z"
+generated: "2025-02-03T13:10:21.92520742Z"
