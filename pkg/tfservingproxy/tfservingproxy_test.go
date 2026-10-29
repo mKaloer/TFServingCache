@@ -2,8 +2,10 @@ package tfservingproxy
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
@@ -79,7 +81,7 @@ func setupGrpcTestCache(proxyCallback func(modelName string, version string), mo
 		modelServer.Serve(lis)
 	}()
 
-	handlerMock := func(modelName string, version string) (*grpc.ClientConn, error) {
+	handlerMock := func(modelName string, version string) ([]*grpc.ClientConn, error) {
 		proxyCallback(modelName, version)
 		// No connection exists - swap to write lock and connect
 		conn, err := grpc.Dial(":8891",
@@ -87,7 +89,7 @@ func setupGrpcTestCache(proxyCallback func(modelName string, version string), mo
 		if err != nil {
 			log.Fatalf("Err: %v", err)
 		}
-		return conn, err
+		return []*grpc.ClientConn{conn}, err
 	}
 
 	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
@@ -297,4 +299,140 @@ func (server *mockProxyServiceServer) MultiInference(ctx context.Context, req *p
 // GetModelMetadata - provides access to metadata for loaded models.
 func (server *mockProxyServiceServer) GetModelMetadata(ctx context.Context, req *pb.GetModelMetadataRequest) (*pb.GetModelMetadataResponse, error) {
 	return nil, nil
+}
+
+func TestGrpcProxyRetriesOnFailure(t *testing.T) {
+	// Start a real model server on a known port
+	modelServer := grpc.NewServer()
+	lis, err := net.Listen("tcp", ":8895")
+	if err != nil {
+		t.Fatalf("Failed to listen: %v", err)
+	}
+	modelServerCalled := false
+	server := mockProxyServiceServer{func(modelName string, modelVersion int64) {
+		modelServerCalled = true
+	}}
+	pb.RegisterPredictionServiceServer(modelServer, &server)
+	go modelServer.Serve(lis)
+
+	// clientProvider returns a dead connection first, then a good one
+	handlerMock := func(modelName string, version string) ([]*grpc.ClientConn, error) {
+		badConn, _ := grpc.Dial(":19999", grpc.WithInsecure()) // nothing listening
+		goodConn, _ := grpc.Dial(":8895", grpc.WithInsecure())
+		return []*grpc.ClientConn{badConn, goodConn}, nil
+	}
+
+	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
+	go grpcProxy.Listen(8894)
+
+	// Send request — should fail on first conn, succeed on second
+	conn, err := grpc.Dial(":8894", grpc.WithInsecure())
+	if err != nil {
+		t.Fatalf("Failed to dial proxy: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewPredictionServiceClient(conn)
+	_, err = client.Classify(context.Background(), &pb.ClassificationRequest{
+		ModelSpec: &pb.ModelSpec{
+			Name:          "testmodel",
+			VersionChoice: &pb.ModelSpec_Version{Version: &wrappers.Int64Value{Value: 1}},
+		},
+		Input: &pb.Input{
+			Kind: &pb.Input_ExampleList{
+				ExampleList: &pb.ExampleList{
+					Examples: []*example.Example{{Features: &example.Features{}}},
+				},
+			},
+		},
+	})
+
+	grpcProxy.Close()
+	modelServer.GracefulStop()
+
+	if err != nil {
+		t.Errorf("Expected request to succeed via retry, got error: %v", err)
+	}
+	if !modelServerCalled {
+		t.Errorf("Model server was not called — retry did not reach good connection")
+	}
+}
+
+func TestGrpcProxyAllConnectionsFail(t *testing.T) {
+	// clientProvider returns only dead connections
+	handlerMock := func(modelName string, version string) ([]*grpc.ClientConn, error) {
+		badConn1, _ := grpc.Dial(":19998", grpc.WithInsecure())
+		badConn2, _ := grpc.Dial(":19997", grpc.WithInsecure())
+		return []*grpc.ClientConn{badConn1, badConn2}, nil
+	}
+
+	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
+	go grpcProxy.Listen(8896)
+
+	conn, err := grpc.Dial(":8896", grpc.WithInsecure())
+	if err != nil {
+		t.Fatalf("Failed to dial proxy: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewPredictionServiceClient(conn)
+	_, err = client.Classify(context.Background(), &pb.ClassificationRequest{
+		ModelSpec: &pb.ModelSpec{
+			Name:          "testmodel",
+			VersionChoice: &pb.ModelSpec_Version{Version: &wrappers.Int64Value{Value: 1}},
+		},
+		Input: &pb.Input{
+			Kind: &pb.Input_ExampleList{
+				ExampleList: &pb.ExampleList{
+					Examples: []*example.Example{{Features: &example.Features{}}},
+				},
+			},
+		},
+	})
+
+	grpcProxy.Close()
+
+	if err == nil {
+		t.Errorf("Expected error when all connections fail, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "all 2 connections failed") {
+		t.Errorf("Expected 'all 2 connections failed' error, got: %v", err)
+	}
+}
+
+func TestGrpcProxyClientProviderError(t *testing.T) {
+	// clientProvider returns an error
+	handlerMock := func(modelName string, version string) ([]*grpc.ClientConn, error) {
+		return nil, fmt.Errorf("no nodes available")
+	}
+
+	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
+	go grpcProxy.Listen(8898)
+
+	conn, err := grpc.Dial(":8898", grpc.WithInsecure())
+	if err != nil {
+		t.Fatalf("Failed to dial proxy: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewPredictionServiceClient(conn)
+	_, err = client.Classify(context.Background(), &pb.ClassificationRequest{
+		ModelSpec: &pb.ModelSpec{
+			Name:          "testmodel",
+			VersionChoice: &pb.ModelSpec_Version{Version: &wrappers.Int64Value{Value: 1}},
+		},
+		Input: &pb.Input{
+			Kind: &pb.Input_ExampleList{
+				ExampleList: &pb.ExampleList{
+					Examples: []*example.Example{{Features: &example.Features{}}},
+				},
+			},
+		},
+	})
+
+	grpcProxy.Close()
+
+	if err == nil {
+		t.Errorf("Expected error when clientProvider fails, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no nodes available") {
+		t.Errorf("Expected 'no nodes available' error, got: %v", err)
+	}
 }

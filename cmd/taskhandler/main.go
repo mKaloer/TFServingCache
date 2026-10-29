@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/mKaloer/TFServingCache/pkg/cachemanager"
@@ -21,28 +25,67 @@ func main() {
 
 	SetConfig()
 
-	cache := serveCache()
-	defer cache.GrpcProxy.Close()
+	cache, cacheHTTPServer := serveCache()
 
-	taskHandler, err := serveProxy()
+	taskHandler, proxyHTTPServer, err := serveProxy()
 	if err != nil {
 		log.WithError(err).Fatal("Could not start proxy")
 	}
-	if taskHandler != nil {
-		defer taskHandler.Close()
-	}
-	// Run health checks
+
+	// Wait for shutdown signal
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+
+	// Run health checks until shutdown signal
+	healthTicker := time.NewTicker(30 * time.Second)
+	defer healthTicker.Stop()
+
 	for {
-		isHealthy := cache.IsHealthy()
-		cache.GrpcProxy.SetHealth(isHealthy)
-		if taskHandler != nil {
-			taskHandler.GrpcProxy.SetHealth(isHealthy)
+		select {
+		case <-healthTicker.C:
+			isHealthy := cache.IsHealthy()
+			cache.GrpcProxy.SetHealth(isHealthy)
+			if taskHandler != nil {
+				taskHandler.GrpcProxy.SetHealth(isHealthy)
+			}
+		case sig := <-stop:
+			log.Infof("Received signal %v, shutting down gracefully...", sig)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			// Mark as unhealthy so k8s stops routing traffic
+			cache.GrpcProxy.SetHealth(false)
+			if taskHandler != nil {
+				taskHandler.GrpcProxy.SetHealth(false)
+			}
+
+			// Allow k8s to propagate the unhealthy status before closing connections
+			time.Sleep(5 * time.Second)
+
+			if taskHandler != nil {
+				if err := taskHandler.Close(); err != nil {
+					log.WithError(err).Error("Error closing task handler")
+				}
+			}
+			if err := cache.GrpcProxy.Close(); err != nil {
+				log.WithError(err).Error("Error closing cache gRPC proxy")
+			}
+			if proxyHTTPServer != nil {
+				if err := proxyHTTPServer.Shutdown(shutdownCtx); err != nil {
+					log.WithError(err).Error("Error shutting down proxy HTTP server")
+				}
+			}
+			if err := cacheHTTPServer.Shutdown(shutdownCtx); err != nil {
+				log.WithError(err).Error("Error shutting down cache HTTP server")
+			}
+
+			log.Info("Shutdown complete")
+			return
 		}
-		time.Sleep(time.Second * 30)
 	}
 }
 
-func serveCache() *cachemanager.CacheManager {
+func serveCache() (*cachemanager.CacheManager, *http.Server) {
 
 	var (
 		restPort = viper.GetInt("cacheRestPort")
@@ -56,14 +99,23 @@ func serveCache() *cachemanager.CacheManager {
 	cacheMux := http.NewServeMux()
 
 	cacheMux.HandleFunc("/v1/models/", cache.ServeRest())
-	go http.ListenAndServe(fmt.Sprintf(":%d", restPort), cacheMux)
+	cacheHTTPServer := &http.Server{Addr: fmt.Sprintf(":%d", restPort), Handler: cacheMux}
+	go func() {
+		if err := cacheHTTPServer.ListenAndServe(); err != http.ErrServerClosed {
+			log.WithError(err).Fatal("Cache HTTP server error")
+		}
+	}()
 
-	go cache.GrpcProxy.Listen(grpcPort)
+	go func() {
+		if err := cache.GrpcProxy.Listen(grpcPort); err != nil {
+			log.WithError(err).Fatal("Cache gRPC server error")
+		}
+	}()
 
-	return cache
+	return cache, cacheHTTPServer
 }
 
-func serveProxy() (*taskhandler.TaskHandler, error) {
+func serveProxy() (*taskhandler.TaskHandler, *http.Server, error) {
 
 	var (
 		restPort = viper.GetInt("proxyRestPort")
@@ -91,10 +143,14 @@ func serveProxy() (*taskhandler.TaskHandler, error) {
 		err := tHandler.ConnectToCluster()
 		if err != nil {
 			log.WithError(err).Fatal("Could not connect to cluster")
-			return nil, err
+			return nil, nil, err
 		}
 
-		go tHandler.GrpcProxy.Listen(grpcPort)
+		go func() {
+			if err := tHandler.GrpcProxy.Listen(grpcPort); err != nil {
+				log.WithError(err).Fatal("Proxy gRPC server error")
+			}
+		}()
 
 		proxyMux.HandleFunc("/v1/models/", tHandler.ServeRest())
 
@@ -108,8 +164,13 @@ func serveProxy() (*taskhandler.TaskHandler, error) {
 
 	log.Infof("Metrics are available at %v:%v", restPort, metricsPath)
 
-	go http.ListenAndServe(fmt.Sprintf(":%d", restPort), proxyMux)
-	return tHandler, nil
+	proxyHTTPServer := &http.Server{Addr: fmt.Sprintf(":%d", restPort), Handler: proxyMux}
+	go func() {
+		if err := proxyHTTPServer.ListenAndServe(); err != http.ErrServerClosed {
+			log.WithError(err).Fatal("Proxy HTTP server error")
+		}
+	}()
+	return tHandler, proxyHTTPServer, nil
 }
 
 func CreateCacheManager() *cachemanager.CacheManager {

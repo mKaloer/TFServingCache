@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var tfServingRestURLMatch = regexp.MustCompile(`(?i)^/v1/models/(?P<modelName>[^/]+)(/versions/(?P<version>[0-9]+))?`)
@@ -61,8 +63,6 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 		err := handler(req, matches[1], matches[3])
 		if err != nil {
 			promRequestsFailed.WithLabelValues("rest").Inc()
-		} else {
-			promRequestsFailed.WithLabelValues("rest").Inc()
 		}
 	}
 	h := &RestProxy{
@@ -73,7 +73,7 @@ func NewRestProxy(handler func(req *http.Request, modelName string, version stri
 }
 
 // NewGrpcProxy creates a new GrpcProxy for TF Serving
-func NewGrpcProxy(clientProvider func(modelName string, version string) (*grpc.ClientConn, error), maxGrpcMsgSize int) *GrpcProxy {
+func NewGrpcProxy(clientProvider func(modelName string, version string) ([]*grpc.ClientConn, error), maxGrpcMsgSize int) *GrpcProxy {
 	promRequestsTotal.WithLabelValues("grpc")
 	promRequestsFailed.WithLabelValues("grpc")
 
@@ -166,49 +166,85 @@ func (proxy *GrpcProxy) Close() error {
 // proxyServiceServer implements the relevant TF serving grpc methods
 // and extracts model name and version and forwards the requests to a handler node
 type proxyServiceServer struct {
-	clientProvider func(modelName string, version string) (*grpc.ClientConn, error)
+	clientProvider func(modelName string, version string) ([]*grpc.ClientConn, error)
 }
 
 // Classify.
 func (server *proxyServiceServer) Classify(ctx context.Context, req *pb.ClassificationRequest) (*pb.ClassificationResponse, error) {
 	promRequestsTotal.WithLabelValues("grpc").Inc()
-	client, err := server.clientForSpec(req.GetModelSpec())
+	clients, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		promRequestsFailed.WithLabelValues("grpc").Inc()
 		log.WithError(err).Error("Could not get grpc client")
 		return nil, err
 	}
-	service := pb.NewPredictionServiceClient(client)
-	res, err := service.Classify(ctx, req)
-	return res, err
+	var lastErr error
+	for i, client := range clients {
+		service := pb.NewPredictionServiceClient(client)
+		res, lastErr := service.Classify(ctx, req)
+		if lastErr == nil {
+			return res, nil
+		}
+		if !isRetryable(lastErr) {
+			promRequestsFailed.WithLabelValues("grpc").Inc()
+			return nil, lastErr
+		}
+		log.WithError(lastErr).Warnf("Classify failed on connection %d/%d", i+1, len(clients))
+	}
+	promRequestsFailed.WithLabelValues("grpc").Inc()
+	return nil, fmt.Errorf("all %d connections failed for Classify: %w", len(clients), lastErr)
 }
 
 // Regress.
 func (server *proxyServiceServer) Regress(ctx context.Context, req *pb.RegressionRequest) (*pb.RegressionResponse, error) {
 	promRequestsTotal.WithLabelValues("grpc").Inc()
-	client, err := server.clientForSpec(req.GetModelSpec())
+	clients, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
 		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
-	service := pb.NewPredictionServiceClient(client)
-	res, err := service.Regress(ctx, req)
-	return res, err
+	var lastErr error
+	for i, client := range clients {
+		service := pb.NewPredictionServiceClient(client)
+		res, lastErr := service.Regress(ctx, req)
+		if lastErr == nil {
+			return res, nil
+		}
+		if !isRetryable(lastErr) {
+			promRequestsFailed.WithLabelValues("grpc").Inc()
+			return nil, lastErr
+		}
+		log.WithError(lastErr).Warnf("Regress failed on connection %d/%d", i+1, len(clients))
+	}
+	promRequestsFailed.WithLabelValues("grpc").Inc()
+	return nil, fmt.Errorf("all %d connections failed for Regress: %w", len(clients), lastErr)
 }
 
 // Predict -- provides access to loaded TensorFlow model.
 func (server *proxyServiceServer) Predict(ctx context.Context, req *pb.PredictRequest) (*pb.PredictResponse, error) {
 	promRequestsTotal.WithLabelValues("grpc").Inc()
-	client, err := server.clientForSpec(req.GetModelSpec())
+	clients, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
 		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
-	service := pb.NewPredictionServiceClient(client)
-	res, err := service.Predict(ctx, req)
-	return res, err
+	var lastErr error
+	for i, client := range clients {
+		service := pb.NewPredictionServiceClient(client)
+		res, lastErr := service.Predict(ctx, req)
+		if lastErr == nil {
+			return res, nil
+		}
+		if !isRetryable(lastErr) {
+			promRequestsFailed.WithLabelValues("grpc").Inc()
+			return nil, lastErr
+		}
+		log.WithError(lastErr).Warnf("Predict failed on connection %d/%d", i+1, len(clients))
+	}
+	promRequestsFailed.WithLabelValues("grpc").Inc()
+	return nil, fmt.Errorf("all %d connections failed for Predict: %w", len(clients), lastErr)
 }
 
 // MultiInference API for multi-headed models.
@@ -219,31 +255,69 @@ func (server *proxyServiceServer) MultiInference(ctx context.Context, req *pb.Mu
 // GetModelMetadata - provides access to metadata for loaded models.
 func (server *proxyServiceServer) GetModelMetadata(ctx context.Context, req *pb.GetModelMetadataRequest) (*pb.GetModelMetadataResponse, error) {
 	promRequestsTotal.WithLabelValues("grpc").Inc()
-	client, err := server.clientForSpec(req.GetModelSpec())
+	clients, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
 		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
-	service := pb.NewPredictionServiceClient(client)
-	res, err := service.GetModelMetadata(ctx, req)
-	return res, err
+	var lastErr error
+	for i, client := range clients {
+		service := pb.NewPredictionServiceClient(client)
+		res, lastErr := service.GetModelMetadata(ctx, req)
+		if lastErr == nil {
+			return res, nil
+		}
+		if !isRetryable(lastErr) {
+			promRequestsFailed.WithLabelValues("grpc").Inc()
+			return nil, lastErr
+		}
+		log.WithError(lastErr).Warnf("GetModelMetadata failed on connection %d/%d", i+1, len(clients))
+	}
+	promRequestsFailed.WithLabelValues("grpc").Inc()
+	return nil, fmt.Errorf("all %d connections failed for GetModelMetadata: %w", len(clients), lastErr)
 }
 
 func (server *proxyServiceServer) SessionRun(ctx context.Context, req *pb.SessionRunRequest) (*pb.SessionRunResponse, error) {
 	promRequestsTotal.WithLabelValues("grpc").Inc()
-	client, err := server.clientForSpec(req.GetModelSpec())
+	clients, err := server.clientForSpec(req.GetModelSpec())
 	if err != nil {
 		log.WithError(err).Error("Could not get grpc client")
 		promRequestsFailed.WithLabelValues("grpc").Inc()
 		return nil, err
 	}
-	service := pb.NewSessionServiceClient(client)
-	res, err := service.SessionRun(ctx, req)
-	return res, err
+	var lastErr error
+	for i, client := range clients {
+		service := pb.NewSessionServiceClient(client)
+		res, lastErr := service.SessionRun(ctx, req)
+		if lastErr == nil {
+			return res, nil
+		}
+		if !isRetryable(lastErr) {
+			promRequestsFailed.WithLabelValues("grpc").Inc()
+			return nil, lastErr
+		}
+		log.WithError(lastErr).Warnf("SessionRun failed on connection %d/%d", i+1, len(clients))
+	}
+	promRequestsFailed.WithLabelValues("grpc").Inc()
+	return nil, fmt.Errorf("all %d connections failed for SessionRun: %w", len(clients), lastErr)
 }
 
-func (server *proxyServiceServer) clientForSpec(modelSpec *pb.ModelSpec) (*grpc.ClientConn, error) {
+// isRetryable returns true for gRPC errors that may succeed on a different connection.
+func isRetryable(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		return true // non-gRPC error, assume transient
+	}
+	switch st.Code() {
+	case codes.Unavailable, codes.Internal, codes.Unknown, codes.DeadlineExceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+func (server *proxyServiceServer) clientForSpec(modelSpec *pb.ModelSpec) ([]*grpc.ClientConn, error) {
 	modelName := modelSpec.GetName()
 	modelVersion := strconv.FormatInt(modelSpec.GetVersion().GetValue(), 10)
 	return server.clientProvider(modelName, modelVersion)

@@ -282,13 +282,13 @@ func (cache *CacheManager) restDirector(req *http.Request, modelName string, ver
 	return nil
 }
 
-func (cache *CacheManager) grpcDirector(modelName string, version string) (*grpc.ClientConn, error) {
+func (cache *CacheManager) grpcDirector(modelName string, version string) ([]*grpc.ClientConn, error) {
 	err := cache.handleModelRequest(modelName, version)
 	if err != nil {
 		log.WithError(err).Errorf("Error handling request")
 		return nil, err
 	}
-	return cache.localGrpcConnection, nil
+	return []*grpc.ClientConn{cache.localGrpcConnection}, nil
 }
 
 func (cache *CacheManager) handleModelRequest(modelName string, version string) error {
