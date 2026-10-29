@@ -13,6 +13,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	example "github.com/tensorflow/tensorflow/tensorflow/go/core/example"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type httpMockServer struct {
@@ -434,5 +436,48 @@ func TestGrpcProxyClientProviderError(t *testing.T) {
 	}
 	if err != nil && !strings.Contains(err.Error(), "no nodes available") {
 		t.Errorf("Expected 'no nodes available' error, got: %v", err)
+	}
+}
+
+func TestGrpcProxyAllConnectionsFailKeepsTheStatusCode(t *testing.T) {
+	// Every connection is dead, so the underlying failures are Unavailable.
+	// The aggregated error must keep that code: callers decide whether to
+	// retry from the gRPC status, and Unknown is not retryable.
+	handlerMock := func(modelName string, version string) ([]*grpc.ClientConn, error) {
+		badConn1, _ := grpc.Dial(":19996", grpc.WithInsecure())
+		badConn2, _ := grpc.Dial(":19995", grpc.WithInsecure())
+		return []*grpc.ClientConn{badConn1, badConn2}, nil
+	}
+
+	grpcProxy := NewGrpcProxy(handlerMock, 1024*1024*16)
+	go grpcProxy.Listen(8899)
+
+	conn, err := grpc.Dial(":8899", grpc.WithInsecure())
+	if err != nil {
+		t.Fatalf("Failed to dial proxy: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewPredictionServiceClient(conn)
+	_, err = client.Classify(context.Background(), &pb.ClassificationRequest{
+		ModelSpec: &pb.ModelSpec{
+			Name:          "testmodel",
+			VersionChoice: &pb.ModelSpec_Version{Version: &wrappers.Int64Value{Value: 1}},
+		},
+		Input: &pb.Input{
+			Kind: &pb.Input_ExampleList{
+				ExampleList: &pb.ExampleList{
+					Examples: []*example.Example{{Features: &example.Features{}}},
+				},
+			},
+		},
+	})
+
+	grpcProxy.Close()
+
+	if err == nil {
+		t.Fatal("Expected an error when all connections fail")
+	}
+	if got := status.Code(err); got != codes.Unavailable {
+		t.Errorf("status code = %s, want Unavailable; callers cannot retry on Unknown", got)
 	}
 }

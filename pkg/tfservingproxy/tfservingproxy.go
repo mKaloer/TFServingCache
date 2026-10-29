@@ -181,18 +181,21 @@ func (server *proxyServiceServer) Classify(ctx context.Context, req *pb.Classifi
 	var lastErr error
 	for i, client := range clients {
 		service := pb.NewPredictionServiceClient(client)
-		res, lastErr := service.Classify(ctx, req)
-		if lastErr == nil {
+		res, err := service.Classify(ctx, req)
+		if err == nil {
 			return res, nil
 		}
-		if !isRetryable(lastErr) {
+		// Assign to the outer lastErr: a := here would shadow it and the
+		// aggregated error below would lose its cause.
+		lastErr = err
+		if !isRetryable(err) {
 			promRequestsFailed.WithLabelValues("grpc").Inc()
-			return nil, lastErr
+			return nil, err
 		}
-		log.WithError(lastErr).Warnf("Classify failed on connection %d/%d", i+1, len(clients))
+		log.WithError(err).Warnf("Classify failed on connection %d/%d", i+1, len(clients))
 	}
 	promRequestsFailed.WithLabelValues("grpc").Inc()
-	return nil, fmt.Errorf("all %d connections failed for Classify: %w", len(clients), lastErr)
+	return nil, status.Errorf(status.Code(lastErr), "all %d connections failed for Classify: %v", len(clients), lastErr)
 }
 
 // Regress.
@@ -207,18 +210,21 @@ func (server *proxyServiceServer) Regress(ctx context.Context, req *pb.Regressio
 	var lastErr error
 	for i, client := range clients {
 		service := pb.NewPredictionServiceClient(client)
-		res, lastErr := service.Regress(ctx, req)
-		if lastErr == nil {
+		res, err := service.Regress(ctx, req)
+		if err == nil {
 			return res, nil
 		}
-		if !isRetryable(lastErr) {
+		// Assign to the outer lastErr: a := here would shadow it and the
+		// aggregated error below would lose its cause.
+		lastErr = err
+		if !isRetryable(err) {
 			promRequestsFailed.WithLabelValues("grpc").Inc()
-			return nil, lastErr
+			return nil, err
 		}
-		log.WithError(lastErr).Warnf("Regress failed on connection %d/%d", i+1, len(clients))
+		log.WithError(err).Warnf("Regress failed on connection %d/%d", i+1, len(clients))
 	}
 	promRequestsFailed.WithLabelValues("grpc").Inc()
-	return nil, fmt.Errorf("all %d connections failed for Regress: %w", len(clients), lastErr)
+	return nil, status.Errorf(status.Code(lastErr), "all %d connections failed for Regress: %v", len(clients), lastErr)
 }
 
 // Predict -- provides access to loaded TensorFlow model.
@@ -233,18 +239,21 @@ func (server *proxyServiceServer) Predict(ctx context.Context, req *pb.PredictRe
 	var lastErr error
 	for i, client := range clients {
 		service := pb.NewPredictionServiceClient(client)
-		res, lastErr := service.Predict(ctx, req)
-		if lastErr == nil {
+		res, err := service.Predict(ctx, req)
+		if err == nil {
 			return res, nil
 		}
-		if !isRetryable(lastErr) {
+		// Assign to the outer lastErr: a := here would shadow it and the
+		// aggregated error below would lose its cause.
+		lastErr = err
+		if !isRetryable(err) {
 			promRequestsFailed.WithLabelValues("grpc").Inc()
-			return nil, lastErr
+			return nil, err
 		}
-		log.WithError(lastErr).Warnf("Predict failed on connection %d/%d", i+1, len(clients))
+		log.WithError(err).Warnf("Predict failed on connection %d/%d", i+1, len(clients))
 	}
 	promRequestsFailed.WithLabelValues("grpc").Inc()
-	return nil, fmt.Errorf("all %d connections failed for Predict: %w", len(clients), lastErr)
+	return nil, status.Errorf(status.Code(lastErr), "all %d connections failed for Predict: %v", len(clients), lastErr)
 }
 
 // MultiInference API for multi-headed models.
@@ -264,18 +273,21 @@ func (server *proxyServiceServer) GetModelMetadata(ctx context.Context, req *pb.
 	var lastErr error
 	for i, client := range clients {
 		service := pb.NewPredictionServiceClient(client)
-		res, lastErr := service.GetModelMetadata(ctx, req)
-		if lastErr == nil {
+		res, err := service.GetModelMetadata(ctx, req)
+		if err == nil {
 			return res, nil
 		}
-		if !isRetryable(lastErr) {
+		// Assign to the outer lastErr: a := here would shadow it and the
+		// aggregated error below would lose its cause.
+		lastErr = err
+		if !isRetryable(err) {
 			promRequestsFailed.WithLabelValues("grpc").Inc()
-			return nil, lastErr
+			return nil, err
 		}
-		log.WithError(lastErr).Warnf("GetModelMetadata failed on connection %d/%d", i+1, len(clients))
+		log.WithError(err).Warnf("GetModelMetadata failed on connection %d/%d", i+1, len(clients))
 	}
 	promRequestsFailed.WithLabelValues("grpc").Inc()
-	return nil, fmt.Errorf("all %d connections failed for GetModelMetadata: %w", len(clients), lastErr)
+	return nil, status.Errorf(status.Code(lastErr), "all %d connections failed for GetModelMetadata: %v", len(clients), lastErr)
 }
 
 func (server *proxyServiceServer) SessionRun(ctx context.Context, req *pb.SessionRunRequest) (*pb.SessionRunResponse, error) {
@@ -289,18 +301,21 @@ func (server *proxyServiceServer) SessionRun(ctx context.Context, req *pb.Sessio
 	var lastErr error
 	for i, client := range clients {
 		service := pb.NewSessionServiceClient(client)
-		res, lastErr := service.SessionRun(ctx, req)
-		if lastErr == nil {
+		res, err := service.SessionRun(ctx, req)
+		if err == nil {
 			return res, nil
 		}
-		if !isRetryable(lastErr) {
+		// Assign to the outer lastErr: a := here would shadow it and the
+		// aggregated error below would lose its cause.
+		lastErr = err
+		if !isRetryable(err) {
 			promRequestsFailed.WithLabelValues("grpc").Inc()
-			return nil, lastErr
+			return nil, err
 		}
-		log.WithError(lastErr).Warnf("SessionRun failed on connection %d/%d", i+1, len(clients))
+		log.WithError(err).Warnf("SessionRun failed on connection %d/%d", i+1, len(clients))
 	}
 	promRequestsFailed.WithLabelValues("grpc").Inc()
-	return nil, fmt.Errorf("all %d connections failed for SessionRun: %w", len(clients), lastErr)
+	return nil, status.Errorf(status.Code(lastErr), "all %d connections failed for SessionRun: %v", len(clients), lastErr)
 }
 
 // isRetryable returns true for gRPC errors that may succeed on a different connection.
