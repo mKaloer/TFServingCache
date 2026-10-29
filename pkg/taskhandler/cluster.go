@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -45,7 +46,24 @@ type ClusterConnection struct {
 	consistent       *consistent.Consistent
 	DiscoveryService DiscoveryService
 	State            ClusterState
+	stateMux         sync.RWMutex
 	memberUpdateChan chan []ServingService
+	// done stops the membership goroutine; stopped is closed by that
+	// goroutine as it exits, so Disconnect can wait for it.
+	done    chan struct{}
+	stopped chan struct{}
+}
+
+func (cluster *ClusterConnection) state() ClusterState {
+	cluster.stateMux.RLock()
+	defer cluster.stateMux.RUnlock()
+	return cluster.State
+}
+
+func (cluster *ClusterConnection) setState(state ClusterState) {
+	cluster.stateMux.Lock()
+	defer cluster.stateMux.Unlock()
+	cluster.State = state
 }
 
 // NewClusterConnection creates a new ClusterConnection.
@@ -64,11 +82,13 @@ func NewClusterConnection(dService DiscoveryService) *ClusterConnection {
 // that is, it registers the node and starts listening for
 // memebership updates.
 func (cluster *ClusterConnection) Connect() error {
-	if cluster.State != ClusterStateReady {
-		return fmt.Errorf("Illegal cluster state: %s", cluster.State.String())
+	if state := cluster.state(); state != ClusterStateReady {
+		return fmt.Errorf("Illegal cluster state: %s", state.String())
 	}
 
 	cluster.memberUpdateChan = make(chan []ServingService)
+	cluster.done = make(chan struct{})
+	cluster.stopped = make(chan struct{})
 	cluster.DiscoveryService.AddNodeListUpdated("clusterChan", cluster.memberUpdateChan)
 
 	err := cluster.DiscoveryService.RegisterService()
@@ -76,8 +96,8 @@ func (cluster *ClusterConnection) Connect() error {
 		log.WithError(err).Fatal("Could not register discovery service")
 		return err
 	}
-	cluster.State = ClusterStateStarted
-	go clusterUpdated(cluster, cluster.memberUpdateChan)
+	cluster.setState(ClusterStateStarted)
+	go clusterUpdated(cluster, cluster.memberUpdateChan, cluster.done, cluster.stopped)
 
 	return nil
 }
@@ -86,12 +106,16 @@ func (cluster *ClusterConnection) Connect() error {
 // that it is not necesarraily unregistered immediately,
 // depending on the discovery service implementation.
 func (cluster *ClusterConnection) Disconnect() error {
-	if cluster.State != ClusterStateStarted {
-		return fmt.Errorf("Illegal cluster state: %s", cluster.State.String())
+	if state := cluster.state(); state != ClusterStateStarted {
+		return fmt.Errorf("Illegal cluster state: %s", state.String())
 	}
 
 	cluster.DiscoveryService.RemoveNodeListUpdated("clusterChan")
-	cluster.State = ClusterStateReady
+	cluster.setState(ClusterStateReady)
+	// Stop the membership goroutine and wait for it: it blocks on the update
+	// channel, so it would otherwise outlive the connection.
+	close(cluster.done)
+	<-cluster.stopped
 	err := cluster.DiscoveryService.UnregisterService()
 	if err != nil {
 		log.WithError(err).Fatal("Could not unregister discovery service")
@@ -101,14 +125,19 @@ func (cluster *ClusterConnection) Disconnect() error {
 	return nil
 }
 
-func clusterUpdated(cluster *ClusterConnection, updateChan chan []ServingService) {
-	for cluster.State == ClusterStateStarted {
-		memberships := <-updateChan
-		services := make([]string, len(memberships))
-		for m := range memberships {
-			services[m] = memberships[m].String()
+func clusterUpdated(cluster *ClusterConnection, updateChan chan []ServingService, done, stopped chan struct{}) {
+	defer close(stopped)
+	for {
+		select {
+		case <-done:
+			return
+		case memberships := <-updateChan:
+			services := make([]string, len(memberships))
+			for m := range memberships {
+				services[m] = memberships[m].String()
+			}
+			cluster.consistent.Set(services)
 		}
-		cluster.consistent.Set(services)
 	}
 }
 

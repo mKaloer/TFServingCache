@@ -233,3 +233,32 @@ func generateNodesAndWaitForMembership(dService *DiscoveryServiceMock, cluster *
 	time.Sleep(1000 * time.Millisecond)
 	return nil
 }
+
+func TestClusterDisconnectStopsTheMembershipGoroutine(t *testing.T) {
+	dService := &DiscoveryServiceMock{
+		ListUpdatedChans: make(map[string]chan []ServingService, 0),
+	}
+	cluster := NewClusterConnection(dService)
+
+	if err := cluster.Connect(); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	// Deliver one update so the goroutine is definitely running and has
+	// looped back to waiting on the channel.
+	dService.GenerateMembers(1)
+	time.Sleep(50 * time.Millisecond)
+
+	if err := cluster.Disconnect(); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+
+	// The update channel is unbuffered, so this send can only succeed if a
+	// receiver is still waiting on it. The membership goroutine blocks on
+	// that channel and never re-checks the cluster state, so without an
+	// explicit stop signal it outlives Disconnect.
+	select {
+	case cluster.memberUpdateChan <- []ServingService{}:
+		t.Error("membership goroutine is still consuming updates after Disconnect")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
