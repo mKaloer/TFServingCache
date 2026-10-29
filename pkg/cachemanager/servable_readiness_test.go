@@ -407,3 +407,39 @@ func TestFetchModel_TimeoutErrorMentionsTheBudget(t *testing.T) {
 		t.Errorf("fetchModel waited %s for a 1s fetch timeout", elapsed)
 	}
 }
+
+func TestFetchModel_ConcurrentCacheHitsDoNotRaceOnTheLRUList(t *testing.T) {
+	// LRUCache.Get moves the entry to the front of the list, so a cache
+	// lookup is a write even though it reads like a read.
+	controller := &fakeServingController{}
+	cache := newTestCacheManager(t, controller, &fakeModelProvider{size: 1024})
+	// Several entries, so Get actually relinks the list instead of
+	// early-returning on an element that is already at the front.
+	var ids []ModelIdentifier
+	for v := int64(1); v <= 4; v++ {
+		id := ModelIdentifier{ModelName: "some-model", Version: v}
+		seedCachedModel(t, cache, id)
+		ids = append(ids, id)
+	}
+
+	const readers = 16
+	var wg sync.WaitGroup
+	errs := make([]error, readers)
+	start := make(chan struct{})
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = cache.fetchModel(ids[i%len(ids)])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("cache hit %d failed: %v", i, err)
+		}
+	}
+}

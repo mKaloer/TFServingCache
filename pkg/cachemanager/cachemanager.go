@@ -154,8 +154,10 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 }
 
 func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Model, bool) {
-	cache.rwMux.RLock()
-	defer cache.rwMux.RUnlock()
+	// A full lock, not RLock: LocalCache.Get moves the entry to the front of
+	// the LRU list, so a lookup mutates shared state.
+	cache.rwMux.Lock()
+	defer cache.rwMux.Unlock()
 	model, isPresent := cache.LocalCache.Get(identifier)
 	hostModelPath := cache.LocalCache.ModelPath(model)
 	fileExists := isPresent && fileOrDirExists(hostModelPath)
