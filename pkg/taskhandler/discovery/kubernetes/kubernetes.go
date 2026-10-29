@@ -55,7 +55,15 @@ func NewDiscoveryService() (*K8sDiscoveryService, error) {
 		return nil, err
 	}
 
-	podInfo, err := k8sFindPodInfo(clientset, namespace, podName)
+	// The Kubernetes API is the one network dependency here, and this runs
+	// during pod startup, so retry rather than letting a transient failure
+	// take the pod down.
+	var podInfo *K8sPodInfo
+	err = retry(k8sStartupAttempts, k8sStartupBaseDelay, func() error {
+		var findErr error
+		podInfo, findErr = k8sFindPodInfo(clientset, namespace, podName)
+		return findErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +192,7 @@ func k8sFindPodInfo(k8sClient *kubernetes.Clientset, namespace string, podName s
 	// Find current service
 	pod, err := k8sClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
-		log.WithError(err).Error("Could not find current pod")
-		return nil, err
+		return nil, fmt.Errorf("could not find current pod %s/%s: %w", namespace, podName, err)
 	}
 	var replicasetName *string = nil
 	for _, ref := range pod.OwnerReferences {
