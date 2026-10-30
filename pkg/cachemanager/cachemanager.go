@@ -67,6 +67,44 @@ type CacheManager struct {
 	ModelFetchTimeout            float32 // model fetch timeout in seconds
 	rwMux                        sync.RWMutex
 	healthProbeModelName         string
+	// loadMux guards loadLocks; each loadLock serialises loads of one model
+	// so that a slow download does not block requests for other models.
+	loadMux   sync.Mutex
+	loadLocks map[ModelIdentifier]*loadLock
+}
+
+type loadLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockModel blocks until this goroutine owns the load lock for the given
+// model and returns the function that releases it. Loads of different models
+// proceed concurrently; the cache lock is only taken for short critical
+// sections, never across a download.
+func (cache *CacheManager) lockModel(identifier ModelIdentifier) func() {
+	cache.loadMux.Lock()
+	if cache.loadLocks == nil {
+		cache.loadLocks = make(map[ModelIdentifier]*loadLock)
+	}
+	l, ok := cache.loadLocks[identifier]
+	if !ok {
+		l = &loadLock{}
+		cache.loadLocks[identifier] = l
+	}
+	l.refs++
+	cache.loadMux.Unlock()
+
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		cache.loadMux.Lock()
+		l.refs--
+		if l.refs == 0 {
+			delete(cache.loadLocks, identifier)
+		}
+		cache.loadMux.Unlock()
+	}
 }
 
 func (handler *CacheManager) ServeRest() func(http.ResponseWriter, *http.Request) {
@@ -100,62 +138,84 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 	}
 	defer promTimer.ObserveDuration()
 	model, isPresent := cache.tryGetModelFromCache(identifier)
-	if !isPresent {
-		var promMissTimer *prometheus.Timer
-		if viper.GetBool("metrics.modelLabels") {
-			promCacheMisses.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
-			promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)))
-		} else {
-			promCacheMisses.WithLabelValues("all_models", "-1").Inc()
-			promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues("all_models", "-1"))
+	if isPresent {
+		if state, err := cache.ServingController.GetModelStatus(model); err == nil &&
+			state == ModelVersionStatus_AVAILABLE {
+			if viper.GetBool("metrics.modelLabels") {
+				promCacheHits.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
+			} else {
+				promCacheHits.WithLabelValues("all_models", "-1").Inc()
+			}
+			return nil
 		}
-		defer promMissTimer.ObserveDuration()
-		// Model does not exist - get size, then put in cache
-		cache.rwMux.Lock()
-		defer cache.rwMux.Unlock()
-		modelSize, err := cache.ModelProvider.ModelSize(identifier.ModelName, identifier.Version)
-		if err != nil {
-			log.WithError(err).Error("Error while retrieving model size")
-			return err
-		}
-		cache.LocalCache.EnsureFreeBytes(modelSize)
-		model, err := cache.ModelProvider.LoadModel(identifier.ModelName, identifier.Version, cache.LocalCache.BaseDir())
-		if err != nil {
-			log.WithError(err).Error("Error while retrieving model")
-			return err
-		}
-		cache.LocalCache.Put(identifier, *model)
-		err = cache.reloadServingConfig(*model)
-		if err != nil {
+		// On disk but serving cannot serve it yet: it is loading, being
+		// unloaded, or absent from the serving config.
+		unlock := cache.lockModel(identifier)
+		defer unlock()
+		if err := cache.ensureServable(model); err != nil {
 			log.WithError(err).Error("Error while loading model")
 			return err
 		}
-	} else if state, err := cache.ServingController.GetModelStatus(model); err != nil ||
-		state != ModelVersionStatus_AVAILABLE {
-		// Model is on disk but serving cannot serve it yet: it is loading,
-		// being unloaded, or absent from the serving config.
-		cache.rwMux.Lock()
-		defer cache.rwMux.Unlock()
-		// Re-check under the lock: another request may have finished the load
-		// while we waited for it.
-		err = cache.ensureServable(model)
-		if err != nil {
-			log.WithError(err).Error("Error while loading model")
-			return err
-		}
+		return nil
+	}
+
+	var promMissTimer *prometheus.Timer
+	if viper.GetBool("metrics.modelLabels") {
+		promCacheMisses.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
+		promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)))
 	} else {
-		if viper.GetBool("metrics.modelLabels") {
-			promCacheHits.WithLabelValues(identifier.ModelName, strconv.FormatInt(identifier.Version, 10)).Inc()
-		} else {
-			promCacheHits.WithLabelValues("all_models", "-1").Inc()
+		promCacheMisses.WithLabelValues("all_models", "-1").Inc()
+		promMissTimer = prometheus.NewTimer(promCacheFetchDuration.WithLabelValues("all_models", "-1"))
+	}
+	defer promMissTimer.ObserveDuration()
+
+	// Serialise per model so concurrent requests for the same model share one
+	// download, while requests for other models are unaffected.
+	unlock := cache.lockModel(identifier)
+	defer unlock()
+
+	// Another request may have completed the load while we waited.
+	if existing, ok := cache.tryGetModelFromCache(identifier); ok {
+		if err := cache.ensureServable(existing); err != nil {
+			log.WithError(err).Error("Error while loading model")
+			return err
 		}
+		return nil
+	}
+
+	modelSize, err := cache.ModelProvider.ModelSize(identifier.ModelName, identifier.Version)
+	if err != nil {
+		log.WithError(err).Error("Error while retrieving model size")
+		return err
+	}
+
+	cache.rwMux.Lock()
+	cache.LocalCache.EnsureFreeBytes(modelSize)
+	cache.rwMux.Unlock()
+
+	// The download is the slow part, so it runs without the cache lock.
+	downloaded, err := cache.ModelProvider.LoadModel(identifier.ModelName, identifier.Version, cache.LocalCache.BaseDir())
+	if err != nil {
+		log.WithError(err).Error("Error while retrieving model")
+		return err
+	}
+
+	cache.rwMux.Lock()
+	cache.LocalCache.Put(identifier, *downloaded)
+	cache.rwMux.Unlock()
+
+	if err := cache.reloadServingConfig(*downloaded); err != nil {
+		log.WithError(err).Error("Error while loading model")
+		return err
 	}
 	return nil
 }
 
 func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Model, bool) {
-	cache.rwMux.RLock()
-	defer cache.rwMux.RUnlock()
+	// A full lock, not RLock: LocalCache.Get moves the entry to the front of
+	// the LRU list, so a lookup mutates shared state.
+	cache.rwMux.Lock()
+	defer cache.rwMux.Unlock()
 	model, isPresent := cache.LocalCache.Get(identifier)
 	hostModelPath := cache.LocalCache.ModelPath(model)
 	fileExists := isPresent && fileOrDirExists(hostModelPath)
@@ -167,14 +227,23 @@ func (cache *CacheManager) tryGetModelFromCache(identifier ModelIdentifier) (Mod
 }
 
 func (cache *CacheManager) reloadServingConfig(requestedModel Model) error {
-	availableModels := cache.LocalCache.ListModels()
-	numActiveModels := int(math.Min(float64(len(availableModels)), float64(cache.MaxConcurrentModels)))
-	err := cache.ServingController.ReloadConfig(availableModels[:numActiveModels], cache.TFServingServerModelBasePath)
-	if err != nil {
+	if err := cache.pushServingConfig(); err != nil {
 		log.WithError(err).Error("Error while loading model")
 		return err
 	}
+	// Waiting happens without the cache lock: serving loads the model
+	// asynchronously and other requests must keep making progress.
 	return cache.waitUntilAvailable(requestedModel)
+}
+
+// pushServingConfig sends the current model list to serving. It holds the
+// cache lock so that concurrent loads cannot interleave their config pushes.
+func (cache *CacheManager) pushServingConfig() error {
+	cache.rwMux.Lock()
+	defer cache.rwMux.Unlock()
+	availableModels := cache.LocalCache.ListModels()
+	numActiveModels := int(math.Min(float64(len(availableModels)), float64(cache.MaxConcurrentModels)))
+	return cache.ServingController.ReloadConfig(availableModels[:numActiveModels], cache.TFServingServerModelBasePath)
 }
 
 // waitUntilAvailable blocks until serving reports the model as AVAILABLE, or

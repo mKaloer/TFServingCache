@@ -70,7 +70,9 @@ func (f *fakeServingController) counts() (statusCalls int, reloadCalls int, last
 type fakeModelProvider struct {
 	mu sync.Mutex
 
-	size      int64
+	size int64
+	// onLoad runs inside LoadModel before the model directory is created.
+	onLoad    func()
 	loadCalls int
 }
 
@@ -81,7 +83,12 @@ func (p *fakeModelProvider) ModelSize(modelName string, modelVersion int64) (int
 func (p *fakeModelProvider) LoadModel(modelName string, modelVersion int64, destinationDir string) (*Model, error) {
 	p.mu.Lock()
 	p.loadCalls++
+	onLoad := p.onLoad
 	p.mu.Unlock()
+
+	if onLoad != nil {
+		onLoad()
+	}
 
 	relPath := path.Join(modelName, strconv.FormatInt(modelVersion, 10))
 	if err := os.MkdirAll(path.Join(destinationDir, relPath), 0o755); err != nil {
@@ -383,6 +390,9 @@ func TestFetchModel_ConcurrentRequestsDownloadOnceAndAllSeeAnAvailableModel(t *t
 	if _, _, lastState := controller.counts(); lastState != ModelVersionStatus_AVAILABLE {
 		t.Errorf("final TF Serving state is %s, want AVAILABLE", lastState.String())
 	}
+	if n := provider.calls(); n != 1 {
+		t.Errorf("model downloaded %d times, want 1; concurrent requests must share one download", n)
+	}
 }
 
 func TestFetchModel_TimeoutErrorMentionsTheBudget(t *testing.T) {
@@ -405,5 +415,82 @@ func TestFetchModel_TimeoutErrorMentionsTheBudget(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Errorf("fetchModel waited %s for a 1s fetch timeout", elapsed)
+	}
+}
+
+func TestFetchModel_ConcurrentCacheHitsDoNotRaceOnTheLRUList(t *testing.T) {
+	// LRUCache.Get moves the entry to the front of the list, so a cache
+	// lookup is a write even though it reads like a read.
+	controller := &fakeServingController{}
+	cache := newTestCacheManager(t, controller, &fakeModelProvider{size: 1024})
+	// Several entries, so Get actually relinks the list instead of
+	// early-returning on an element that is already at the front.
+	var ids []ModelIdentifier
+	for v := int64(1); v <= 4; v++ {
+		id := ModelIdentifier{ModelName: "some-model", Version: v}
+		seedCachedModel(t, cache, id)
+		ids = append(ids, id)
+	}
+
+	const readers = 16
+	var wg sync.WaitGroup
+	errs := make([]error, readers)
+	start := make(chan struct{})
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = cache.fetchModel(ids[i%len(ids)])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("cache hit %d failed: %v", i, err)
+		}
+	}
+}
+
+func TestFetchModel_ColdLoadDoesNotBlockOtherModels(t *testing.T) {
+	downloadStarted := make(chan struct{})
+	releaseDownload := make(chan struct{})
+	provider := &fakeModelProvider{
+		size: 1024,
+		onLoad: func() {
+			close(downloadStarted)
+			<-releaseDownload
+		},
+	}
+	controller := &fakeServingController{}
+	cache := newTestCacheManager(t, controller, provider)
+
+	hot := ModelIdentifier{ModelName: "hot-model", Version: 1}
+	seedCachedModel(t, cache, hot)
+	cold := ModelIdentifier{ModelName: "cold-model", Version: 1}
+
+	coldDone := make(chan error, 1)
+	go func() { coldDone <- cache.fetchModel(cold) }()
+	<-downloadStarted
+
+	// The cold model is mid-download. A request for an already-loaded model
+	// must not queue behind it.
+	hotDone := make(chan error, 1)
+	go func() { hotDone <- cache.fetchModel(hot) }()
+
+	select {
+	case err := <-hotDone:
+		if err != nil {
+			t.Errorf("cache hit for the hot model failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("a cache hit for an unrelated model blocked behind a cold download")
+	}
+
+	close(releaseDownload)
+	if err := <-coldDone; err != nil {
+		t.Errorf("cold load failed: %v", err)
 	}
 }
