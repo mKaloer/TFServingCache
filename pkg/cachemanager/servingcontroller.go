@@ -16,6 +16,15 @@ import (
 	"google.golang.org/grpc/backoff"
 )
 
+// ServingControl is the subset of the TF Serving model service that the cache
+// depends on. It exists so the cache logic can be exercised without a running
+// TF Serving instance.
+type ServingControl interface {
+	ReloadConfig(models []*Model, tfServingServerModelDir string) error
+	GetModelStatus(model Model) (ModelVersionStatus_State, error)
+	Close() error
+}
+
 type TFServingController struct {
 	grpcHost             string
 	restHost             string

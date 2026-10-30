@@ -63,7 +63,7 @@ type CacheManager struct {
 	LocalCache                   ModelCache
 	MaxConcurrentModels          int
 	TFServingServerModelBasePath string
-	ServingController            *TFServingController
+	ServingController            ServingControl
 	ModelFetchTimeout            float32 // model fetch timeout in seconds
 	rwMux                        sync.RWMutex
 	healthProbeModelName         string
@@ -131,12 +131,14 @@ func (cache *CacheManager) fetchModel(identifier ModelIdentifier) error {
 			return err
 		}
 	} else if state, err := cache.ServingController.GetModelStatus(model); err != nil ||
-		state == ModelVersionStatus_UNLOADING ||
-		state == ModelVersionStatus_END {
-		// Model in disk cache but not loaded in serving
+		state != ModelVersionStatus_AVAILABLE {
+		// Model is on disk but serving cannot serve it yet: it is loading,
+		// being unloaded, or absent from the serving config.
 		cache.rwMux.Lock()
 		defer cache.rwMux.Unlock()
-		err = cache.reloadServingConfig(model)
+		// Re-check under the lock: another request may have finished the load
+		// while we waited for it.
+		err = cache.ensureServable(model)
 		if err != nil {
 			log.WithError(err).Error("Error while loading model")
 			return err
@@ -172,6 +174,14 @@ func (cache *CacheManager) reloadServingConfig(requestedModel Model) error {
 		log.WithError(err).Error("Error while loading model")
 		return err
 	}
+	return cache.waitUntilAvailable(requestedModel)
+}
+
+// waitUntilAvailable blocks until serving reports the model as AVAILABLE, or
+// until ModelFetchTimeout elapses. Any other state means serving cannot serve
+// the model yet, so returning early would make the caller forward a request
+// that fails with "Servable not found".
+func (cache *CacheManager) waitUntilAvailable(requestedModel Model) error {
 	totalTime := float32(0.0)
 	for totalTime == 0 || totalTime < cache.ModelFetchTimeout {
 		status, err := cache.ServingController.GetModelStatus(requestedModel)
@@ -179,19 +189,37 @@ func (cache *CacheManager) reloadServingConfig(requestedModel Model) error {
 			log.WithError(err).Errorf("Error getting model status. Duration: %fs", totalTime)
 		} else if status == ModelVersionStatus_AVAILABLE {
 			log.Info("Model available")
-			break
-		} else if status == ModelVersionStatus_END {
-			log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
+			return nil
 		} else {
 			log.Debugf("Model not yet available: %s. Duration: %fs", status.String(), totalTime)
 		}
 		totalTime += 0.5
 		time.Sleep(time.Millisecond * 500)
 	}
-	if totalTime >= cache.ModelFetchTimeout {
-		return errors.New("Timeout: Model did not load in time")
+	return errors.New("Timeout: Model did not load in time")
+}
+
+// ensureServable returns nil only once serving reports the model AVAILABLE.
+// A model present on disk is not necessarily loaded: it may still be loading
+// after another request pushed the config, or it may have been dropped from
+// the config entirely. Callers treat the nil return as the promise that the
+// model can be served right now.
+func (cache *CacheManager) ensureServable(model Model) error {
+	state, err := cache.ServingController.GetModelStatus(model)
+	switch {
+	case err == nil && state == ModelVersionStatus_AVAILABLE:
+		return nil
+	case err == nil && (state == ModelVersionStatus_START || state == ModelVersionStatus_LOADING):
+		// Another request already pushed the config for this model; wait for
+		// that load instead of pushing the config a second time.
+		log.Infof("Model is loading in serving, waiting: %s:%d (state: %s)",
+			model.Identifier.ModelName, model.Identifier.Version, state.String())
+		return cache.waitUntilAvailable(model)
+	default:
+		log.Infof("Reloading model into serving: %s:%d (state: %s)",
+			model.Identifier.ModelName, model.Identifier.Version, state.String())
+		return cache.reloadServingConfig(model)
 	}
-	return nil
 }
 
 func New(
